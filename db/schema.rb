@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
+ActiveRecord::Schema[7.1].define(version: 2024_12_12_195606) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -46,6 +46,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
     t.float "price"
     t.boolean "invoice_issued", default: false
     t.boolean "invoice_paid", default: false
+    t.boolean "completed", default: false
     t.index ["client_id"], name: "index_client_orders_on_client_id"
   end
 
@@ -80,6 +81,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
     t.bigint "expedition_id"
     t.bigint "supplier_order_index_id"
     t.boolean "is_clone", default: false, null: false
+    t.string "finition_status", default: "draft"
     t.index ["client_id"], name: "index_client_positions_on_client_id"
     t.index ["expedition_id"], name: "index_client_positions_on_expedition_id"
     t.index ["part_id"], name: "index_client_positions_on_part_id"
@@ -139,6 +141,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
     t.datetime "updated_at", null: false
     t.boolean "sorted"
     t.boolean "is_clone", default: false, null: false
+    t.string "finition_status", default: "draft"
     t.index ["expedition_id"], name: "index_expedition_positions_on_expedition_id"
     t.index ["part_id"], name: "index_expedition_positions_on_part_id"
     t.index ["supplier_order_index_id"], name: "index_expedition_positions_on_supplier_order_index_id"
@@ -172,13 +175,6 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
     t.index ["supplier_id"], name: "index_expeditions_on_supplier_id"
   end
 
-  create_table "expeditions_supplier_order_indices", id: false, force: :cascade do |t|
-    t.bigint "expedition_id", null: false
-    t.bigint "supplier_order_index_id", null: false
-    t.index ["expedition_id", "supplier_order_index_id"], name: "idx_on_expedition_id_supplier_order_index_id_41691ab0a5"
-    t.index ["supplier_order_index_id", "expedition_id"], name: "idx_on_supplier_order_index_id_expedition_id_2407045434"
-  end
-
   create_table "jwt_denylist", force: :cascade do |t|
     t.string "jti", null: false
     t.datetime "exp", null: false
@@ -206,6 +202,30 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
   create_table "logistic_places_supplier_orders", id: false, force: :cascade do |t|
     t.bigint "logistic_place_id", null: false
     t.bigint "supplier_order_id", null: false
+  end
+
+  create_table "part_histories", force: :cascade do |t|
+    t.bigint "part_id", null: false
+    t.string "event_type"
+    t.string "location_name"
+    t.datetime "start_time"
+    t.datetime "end_time"
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["part_id"], name: "index_part_histories_on_part_id"
+  end
+
+  create_table "part_histories_tables", force: :cascade do |t|
+    t.bigint "part_id", null: false
+    t.string "event_type"
+    t.string "location_name"
+    t.datetime "start_time"
+    t.datetime "end_time"
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["part_id"], name: "index_part_histories_tables_on_part_id"
   end
 
   create_table "parts", force: :cascade do |t|
@@ -293,6 +313,9 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
     t.datetime "updated_at", null: false
     t.bigint "supplier_order_position_id", null: false
     t.bigint "part_id", null: false
+    t.string "finition_status", default: "draft"
+    t.bigint "expedition_id", null: false
+    t.index ["expedition_id"], name: "index_supplier_order_indices_on_expedition_id"
     t.index ["part_id"], name: "index_supplier_order_indices_on_part_id"
     t.index ["supplier_order_position_id"], name: "index_supplier_order_indices_on_supplier_order_position_id"
   end
@@ -399,10 +422,13 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_06_123637) do
   add_foreign_key "expedition_positions", "supplier_order_indices"
   add_foreign_key "expeditions", "suppliers"
   add_foreign_key "logistic_places", "users"
+  add_foreign_key "part_histories", "parts"
+  add_foreign_key "part_histories_tables", "parts"
   add_foreign_key "parts", "clients"
   add_foreign_key "parts", "users"
   add_foreign_key "standard_stocks", "clients"
   add_foreign_key "sub_contractors", "users"
+  add_foreign_key "supplier_order_indices", "expeditions"
   add_foreign_key "supplier_order_indices", "parts"
   add_foreign_key "supplier_order_indices", "supplier_order_positions"
   add_foreign_key "supplier_order_positions", "parts"

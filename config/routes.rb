@@ -14,7 +14,7 @@ Rails.application.routes.draw do
   # Separate GET fetch routes for related data
   get 'users/:user_id/parts/:part_id/supplier_orders', to: 'parts#fetch_supplier_orders_by_part'
   get 'users/:user_id/parts/:part_id/client_orders', to: 'parts#fetch_client_orders_by_part'
-  get 'users/:user_id/user_client_orders', to: 'parts#fetch_user_client_orders'
+  get 'users/:user_id/future_user_client_orders', to: 'parts#fetch_future_user_client_orders'
   get 'users/:user_id/parts/:part_id/supplier_order_indexes_by_part', to: 'parts#fetch_expeditions_supplier_order_indices_by_part'
   get 'users/:user_id/parts/:part_id/sub_contractors', to: 'parts#fetch_sub_contractors_by_part'
   get 'users/:user_id/parts/:part_id/logistic_places', to: 'parts#fetch_logistic_places_by_part'
@@ -30,7 +30,10 @@ Rails.application.routes.draw do
   get 'users/:user_id/clients/:client_id/fetch_consignment_stocks_by_client', to: 'parts#fetch_consignment_stocks_by_client'
   get 'users/:user_id/parts/:part_id/clients/:client_id/standard_stocks_positions_by_client', to: 'parts#standard_stocks_positions_by_client'
   get 'users/:user_id/parts/:part_id/clients/:client_id/consignment_stocks_positions_by_client', to: 'parts#consignment_stocks_positions_by_client'
-  
+  get 'users/:user_id/clients/:client_id/parts_by_client', to: 'parts#fetch_parts_by_client'
+  get 'users/:user_id/parts/:part_id/part_history', to: 'parts#fetch_part_history'
+  get 'users/:user_id/client_positions/:client_position_id/position_history', to: 'parts#fetch_position_history'
+
   # Route DELETE for deleting orders
   delete 'users/:user_id/client_orders/:client_order_id', to: 'parts#delete_client_order'
   delete 'users/:user_id/supplier_orders/:supplier_order_id', to: 'parts#delete_supplier_order'

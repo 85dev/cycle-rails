@@ -6,6 +6,7 @@ class Part < ApplicationRecord
   has_many :supplier_order_indices, dependent: :destroy
   has_many :supplier_order_positions, dependent: :destroy
   has_many :client_positions, dependent: :destroy
+  has_many :part_histories, dependent: :destroy
 
   has_and_belongs_to_many :suppliers
   has_and_belongs_to_many :supplier_orders
