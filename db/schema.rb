@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_12_12_195606) do
+ActiveRecord::Schema[7.1].define(version: 2024_12_19_140849) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -119,6 +119,39 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_12_195606) do
     t.bigint "client_id", null: false
     t.index ["client_id", "expedition_position_id"], name: "idx_on_client_id_expedition_position_id_4e0b98a38c"
     t.index ["expedition_position_id", "client_id"], name: "idx_on_expedition_position_id_client_id_1030e66625"
+  end
+
+  create_table "consignment_consumption_positions", force: :cascade do |t|
+    t.bigint "consignment_consumption_id", null: false
+    t.bigint "part_id", null: false
+    t.integer "quantity", null: false
+    t.decimal "price", precision: 10, scale: 2
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "current_quantity"
+    t.index ["consignment_consumption_id"], name: "idx_on_consignment_consumption_id_3287d31ece"
+    t.index ["part_id"], name: "index_consignment_consumption_positions_on_part_id"
+  end
+
+  create_table "consignment_consumptions", force: :cascade do |t|
+    t.bigint "consignment_stock_id", null: false
+    t.datetime "begin_date", null: false
+    t.datetime "end_date", null: false
+    t.string "number", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "current_quantity"
+    t.index ["consignment_stock_id"], name: "index_consignment_consumptions_on_consignment_stock_id"
+  end
+
+  create_table "consignment_stock_parts", force: :cascade do |t|
+    t.bigint "consignment_stock_id", null: false
+    t.bigint "part_id", null: false
+    t.integer "current_quantity", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["consignment_stock_id"], name: "index_consignment_stock_parts_on_consignment_stock_id"
+    t.index ["part_id"], name: "index_consignment_stock_parts_on_part_id"
   end
 
   create_table "consignment_stocks", force: :cascade do |t|
@@ -239,6 +272,8 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_12_195606) do
     t.bigint "client_id", null: false
     t.integer "price"
     t.float "weight"
+    t.decimal "current_client_price"
+    t.decimal "current_supplier_price"
     t.index ["client_id"], name: "index_parts_on_client_id"
     t.index ["user_id"], name: "index_parts_on_user_id"
   end
@@ -416,6 +451,11 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_12_195606) do
   add_foreign_key "client_positions", "parts"
   add_foreign_key "client_positions", "supplier_order_indices"
   add_foreign_key "clients", "users"
+  add_foreign_key "consignment_consumption_positions", "consignment_consumptions"
+  add_foreign_key "consignment_consumption_positions", "parts"
+  add_foreign_key "consignment_consumptions", "consignment_stocks"
+  add_foreign_key "consignment_stock_parts", "consignment_stocks"
+  add_foreign_key "consignment_stock_parts", "parts"
   add_foreign_key "consignment_stocks", "clients"
   add_foreign_key "expedition_positions", "expeditions"
   add_foreign_key "expedition_positions", "parts"

@@ -7,7 +7,7 @@ Rails.application.routes.draw do
 
   # Specific routes
   get '/member-data', to: 'members#show'
-  get 'users/:user_id/part-related-data/:part_id', to: 'parts#part_related_data'
+  get 'users/:user_id/part_related_data/:part_id', to: 'parts#part_related_data'
   get 'users/:user_id/parts', to: 'parts#parts_by_user'
   get 'users/:user_id/expeditions/:expedition_id/supplier_orders', to: 'parts#fetch_expedition_orders'
 
@@ -33,7 +33,9 @@ Rails.application.routes.draw do
   get 'users/:user_id/clients/:client_id/parts_by_client', to: 'parts#fetch_parts_by_client'
   get 'users/:user_id/parts/:part_id/part_history', to: 'parts#fetch_part_history'
   get 'users/:user_id/client_positions/:client_position_id/position_history', to: 'parts#fetch_position_history'
-
+  get 'users/:user_id/kpi_metrics', to: 'parts#fetch_kpi_metrics'
+  get 'users/:user_id/clients/:client_id/consignment_stocks/:consignment_stock_id/parts_by_client_and_consignment_stock', to: 'parts#fetch_parts_by_client_and_consignment_stock'
+  
   # Route DELETE for deleting orders
   delete 'users/:user_id/client_orders/:client_order_id', to: 'parts#delete_client_order'
   delete 'users/:user_id/supplier_orders/:supplier_order_id', to: 'parts#delete_supplier_order'
@@ -51,6 +53,9 @@ Rails.application.routes.draw do
   post 'users/:user_id/expeditions/:expedition_id/dispatch_expedition', to: 'parts#dispatch_expedition'
   post 'users/:user_id/clients/:client_id/sort_client_positions', to: 'parts#sort_client_positions'
   post 'users/:user_id/expedition_positions/:expedition_position_id/transfer_position', to: 'parts#transfer_position'
+  post 'users/:user_id/consignment_stocks/:consignment_stock_id/create_consignment_consumption', to: 'parts#create_consignment_consumption'
+  # Get is enough for this route
+  get 'users/:user_id/client_orders/:client_order_id/complete_client_order', to: 'parts#complete_client_order'
 
   # Routes GET for data index by user
   get 'users/:user_id/clients', to: 'parts#client_index'

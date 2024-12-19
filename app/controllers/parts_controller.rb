@@ -1,12 +1,12 @@
 class PartsController < ApplicationController
     before_action :set_user, only: [:create_supplier, :subcontractors_index, :logistic_places_index, :expeditions, :parts_by_user, :fetch_supplier_orders_by_user, :create_client, :create_part, :client_index, :fetch_client_orders_by_part, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_supplier, only: [:parts_by_supplier]
-    before_action :set_client, only: [:fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
+    before_action :set_client, only: [:fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
     before_action :set_supplier_orders, only: [:parts_by_supplier_orders]
     before_action :set_client_orders, only: [:parts_by_client_orders]
-    before_action :set_part, only: [:fetch_part_history, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
+    before_action :set_part, only: [:consignment_stocks_positions_by_client, :fetch_part_history, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_expedition, only: [:fetch_expedition_orders, :dispatch_expedition]
-    before_action :set_user_by_id, only: [:fetch_future_user_client_orders, :create_subcontractor, :create_logistic_place ]
+    before_action :set_user_by_id, only: [:create_consignment_consumption, :fetch_kpi_metrics, :fetch_future_user_client_orders, :create_subcontractor, :create_logistic_place ]
 
     # API calls for models creation [POST]
     # Create PART linked to CLIENT, SUPPLIER and USER
@@ -107,6 +107,47 @@ class PartsController < ApplicationController
       end
     end
 
+    def create_consignment_consumption
+      @stock = ConsignmentStock.find(params[:consignment_stock_id])
+      
+      ActiveRecord::Base.transaction do
+        # Create the main consumption record
+        @consumption = ConsignmentConsumption.create!(
+          consignment_stock: @stock,
+          begin_date: params[:begin_date],
+          end_date: params[:end_date],
+          number: params[:number]
+        )
+
+        # Create consumption positions
+        params[:consignment_consumptions].each do |consumption|
+          part_id = consumption[:part_id]
+          quantity = consumption[:quantity].to_i
+
+          next if quantity <= 0 
+    
+          consignment_stock_part = @stock.consignment_stock_parts.find_by(part_id: part_id)
+
+          if consignment_stock_part.current_quantity < quantity
+            raise StandardError, "Insufficient stock for part_id: #{part_id}. Available: #{consignment_stock_part.current_quantity}, Requested: #{quantity}"
+          end
+
+          consignment_stock_part.update!(current_quantity: consignment_stock_part.current_quantity - quantity)
+    
+          ConsignmentConsumptionPosition.create!(
+            consignment_consumption: @consumption,
+            part_id: consumption[:part_id],
+            quantity: consumption[:quantity],
+            price: consumption[:price]
+          )
+        end
+
+        render json: @consumption, status: :created
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+    end
+
     # Create CLIENT_ORDER linked to CLIENT, PART
     def create_client_order
       @client_order = ClientOrder.new(client_order_params)
@@ -139,6 +180,8 @@ class PartsController < ApplicationController
               delivery_date: position[:delivery_date],
               status: 'undelivered'
             )
+
+            part.update!(current_client_price: position[:price])
           end 
 
           render json: { success: "Client order created successfully", client_order: @client_order }, status: :created
@@ -148,6 +191,26 @@ class PartsController < ApplicationController
       rescue ActiveRecord::RecordInvalid => e
         render json: { errors: e.message }, status: :unprocessable_entity
       end
+    end
+
+    def complete_client_order
+      @client_order = ClientOrder.find_by(id: params[:client_order_id])
+
+      if @client_order
+        ActiveRecord::Base.transaction do
+          # Update the client order status
+          @client_order.update!(order_status: 'delivered')
+          
+          # Update all associated positions to delivered
+          @client_order.client_order_positions.update_all(status: 'delivered')
+    
+          render json: { success: "Client order #{@client_order.number} marked as delivered" }, status: :ok
+        end
+      else
+        render json: { error: "Client order not found" }, status: :not_found
+      end
+    rescue ActiveRecord::RecordInvalid => e
+      render json: { errors: e.message }, status: :unprocessable_entity
     end
 
     # Create SUPPLIER_ORDER linked to SUPPLIER, PART, CLIENT_ORDER
@@ -177,6 +240,8 @@ class PartsController < ApplicationController
                 delivery_date: position[:delivery_date],
                 status: 'production'
               )
+
+              part.update!(current_supplier_price: position[:price])
     
               # Associate each order position with the respective client orders
               client_order_ids.each do |client_order_id|
@@ -253,7 +318,7 @@ class PartsController < ApplicationController
       end
     end
 
-    def dispatch_expedition      
+    def dispatch_expedition
       supplier_order_indices_ids = params[:supplier_order_indices_ids]
       subcontractors = params[:subcontractors]
       logistic_places = params[:logistic_places]
@@ -263,85 +328,104 @@ class PartsController < ApplicationController
       clones = params[:clones]
     
       ActiveRecord::Base.transaction do
-        # Expedition update status to delivered
+        # Update expedition status to delivered
         expedition = Expedition.find_by(id: params[:expedition_id])
-
-        # Process each dispatch
+        raise ActiveRecord::RecordNotFound, "Expedition not found" unless expedition
+    
         supplier_order_indices_ids.each_with_index do |supplier_order_index_id, index|
-
           supplier_order_index = SupplierOrderIndex.find_by(id: supplier_order_index_id)
-
+          raise ActiveRecord::RecordNotFound, "SupplierOrderIndex not found" unless supplier_order_index
+    
           subcontractor_name = subcontractors[index].presence
           logistic_place_name = logistic_places[index].presence
           part_reference = references[index]
           part_designation = designations[index]
           client_name = clients[index].presence
           is_clone = clones[index]
-
-          part_id = Part.find_by(reference: part_reference, designation: part_designation)&.id
-          raise ActiveRecord::RecordNotFound, "Part not found" unless part_id
-
-          # Index set to delivered
+    
+          part = Part.find_by(reference: part_reference, designation: part_designation)
+          raise ActiveRecord::RecordNotFound, "Part not found" unless part
+    
+          # Update index status
           supplier_order_index.update!(status: 'delivered')
-
+    
           if client_name
-            # If the dispatch is to a client, create a ClientPosition
+            # Handle dispatch to client
             client = Client.find_by(name: client_name)
             raise ActiveRecord::RecordNotFound, "Client not found" unless client
     
-            client_position = ClientPosition.create!(
+            create_client_position(
               client_id: client.id,
               supplier_order_index_id: supplier_order_index_id,
               expedition_id: expedition.id,
-              part_id: part_id,
+              part_id: part.id,
               quantity: supplier_order_index.quantity,
               is_clone: is_clone,
               sorted: false
             )
           else
-            # Otherwise, create an ExpeditionPosition for subcontractor and logistic place destinations
-            position = ExpeditionPosition.create!(
-              supplier_order_index_id: supplier_order_index_id,
+            # Handle subcontractor and logistic place dispatch
+            # Prepare parameters for creating the expedition position
+            position_params = {
               expedition_id: expedition.id,
-              part_id: part_id,
+              supplier_order_index_id: supplier_order_index.id,
+              part_id: part.id,
+              quantity: supplier_order_index.quantity,
               is_clone: is_clone,
-              quantity: supplier_order_index.quantity
-            )
-    
-            # Handle subcontractors and logistic places for ExpeditionPosition
+              finition_status: supplier_order_index.finition_status
+            }
+
+            # If subcontractor or logistic place is specified, use the proper destination type
             if subcontractor_name
               subcontractor = SubContractor.find_by(name: subcontractor_name)
-              position.sub_contractors << subcontractor if subcontractor
+              raise ActiveRecord::RecordNotFound, "Subcontractor not found" unless subcontractor
 
-              PartHistory.create!(
-                part_id: part_id,
+              position_params[:destination_type] = "subcontractor"
+              position_params[:subcontractor_id] = subcontractor.id
+            elsif logistic_place_name
+              logistic_place = LogisticPlace.find_by(name: logistic_place_name)
+              raise ActiveRecord::RecordNotFound, "Logistic place not found" unless logistic_place
+
+              position_params[:destination_type] = "logistic_place"
+              position_params[:logistic_place_id] = logistic_place.id
+            end
+
+            # Create the expedition position using the extracted parameters
+            position = create_expedition_position(**position_params)
+    
+            if subcontractor_name
+              subcontractor = SubContractor.find_by(name: subcontractor_name)
+              raise ActiveRecord::RecordNotFound, "Subcontractor not found" unless subcontractor
+    
+              position.sub_contractors << subcontractor
+              create_part_history(
+                part_id: part.id,
                 event_type: 'subcontractor',
                 location_name: subcontractor_name,
-                start_time: Time.current,
                 description: "Part sent to subcontractor #{subcontractor_name}"
               )
             end
     
             if logistic_place_name
               logistic_place = LogisticPlace.find_by(name: logistic_place_name)
-              position.logistic_places << logistic_place if logistic_place
-
-              PartHistory.create!(
-                part_id: part_id,
+              raise ActiveRecord::RecordNotFound, "Logistic place not found" unless logistic_place
+    
+              position.logistic_places << logistic_place
+              create_part_history(
+                part_id: part.id,
                 event_type: 'logistic_place',
                 location_name: logistic_place_name,
-                start_time: Time.current,
                 description: "Part stored in logistic place #{logistic_place_name}"
               )
             end
           end
         end
     
-        @expedition.update!(status: 'delivered')
+        expedition.update!(status: 'delivered', arrival_time: params[:arrival_time])
     
         render json: { success: "Expedition dispatch completed successfully" }, status: :ok
       end
-    rescue ActiveRecord::RecordInvalid => e
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
       render json: { error: e.message }, status: :unprocessable_entity
     end
 
@@ -356,13 +440,20 @@ class PartsController < ApplicationController
     
           if standard_stocks[index] != 0
             standard_stock = StandardStock.find_by(id: standard_stocks[index])
-            standard_stock.increment!(:current_quantity, client_position.quantity)
 
             client_position.standard_stocks << standard_stock
             client_position.update!(sorted: true, consignment_stock: false)
           elsif consignment_stocks[index] != 0
             consignment_stock = ConsignmentStock.find_by(id: consignment_stocks[index])
-            consignment_stock.increment!(:current_quantity, client_position.quantity)
+            
+            consignment_stock_part = ConsignmentStockPart.find_or_initialize_by(
+              consignment_stock_id: consignment_stock.id,
+              part_id: client_position.part_id
+            )
+
+            consignment_stock_part.current_quantity ||= 0
+            consignment_stock_part.current_quantity += client_position.quantity
+            consignment_stock_part.save!
 
             client_position.consignment_stocks << consignment_stock
             client_position.update!(sorted: true, consignment_stock: true)
@@ -384,128 +475,94 @@ class PartsController < ApplicationController
       transfer_quantity = params[:quantity].to_i
       destination_type = params[:destination_type]
       destination_name = params[:destination_name]
-    
+      
       return render json: { error: "Expedition position not found" }, status: :not_found unless expedition_position
+    
+      # Default value for is_clone if it's not provided
+      is_clone = params[:is_clone].present? ? params[:is_clone] : false
+
+      logistic_place_id = params[:logistic_place_id]
+      subcontractor_id = params[:subcontractor_id]
     
       ActiveRecord::Base.transaction do
         total_quantity = expedition_position.quantity
     
         if transfer_quantity == total_quantity
-          # Clear all associations and link to the new destination
           expedition_position.sub_contractors.clear
           expedition_position.logistic_places.clear
     
           case destination_type
           when "subcontractor"
-            subcontractor = SubContractor.find_by(id: params[:sub_contractor_id])
-            unless subcontractor
-              render json: { error: "Subcontractor not found" }, status: :not_found
-              return
-            end
+            subcontractor = SubContractor.find_by(id: params[:subcontractor_id])
+            return render json: { error: "Subcontractor not found" }, status: :not_found unless subcontractor
+    
             expedition_position.sub_contractors << subcontractor
     
           when "logistic_place"
             logistic_place = LogisticPlace.find_by(id: params[:logistic_place_id])
-            unless logistic_place
-              render json: { error: "Logistic place not found" }, status: :not_found
-              return
-            end
+            return render json: { error: "Logistic place not found" }, status: :not_found unless logistic_place
+    
             expedition_position.logistic_places << logistic_place
     
           when "client"
             client = Client.find_by(name: destination_name)
-            unless client
-              render json: { error: "Client not found" }, status: :not_found
-              return
-            end
+            return render json: { error: "Client not found" }, status: :not_found unless client
     
-            ClientPosition.create!(
+            # Pass arguments as a hash for `create_client_position`
+            create_client_position(
               client_id: client.id,
               part_id: params[:part_id],
               expedition_id: expedition_position.expedition_id,
               supplier_order_index_id: expedition_position.supplier_order_index_id,
               quantity: transfer_quantity,
-              sorted: false,
-              finition_status: expedition_position.finition_status
+              is_clone: is_clone,
+              sorted: false
             )
-    
           else
-            render json: { error: "Invalid destination type" }, status: :unprocessable_entity
-            return
+            return render json: { error: "Invalid destination type" }, status: :unprocessable_entity
           end
     
-          # Create history for the transfer
-          PartHistory.create!(
+          create_part_history(
             part_id: params[:part_id],
             event_type: destination_type,
-            location_name: destination_name,
-            start_time: Time.current,
-            description: "Lot transféré à #{destination_type} #{destination_name}"
+            location_name: destination_name
           )
+    
         elsif transfer_quantity < total_quantity
-          # Update the original position with the reduced quantity
           remaining_quantity = total_quantity - transfer_quantity
           expedition_position.update!(quantity: remaining_quantity)
     
           if destination_type == "client"
-            # Create a new ClientPosition for the split quantity
             client = Client.find_by(name: destination_name)
-            unless client
-              render json: { error: "Client not found" }, status: :not_found
-              return
-            end
+            return render json: { error: "Client not found" }, status: :not_found unless client
     
-            ClientPosition.create!(
+            create_client_position(
               client_id: client.id,
               part_id: params[:part_id],
               expedition_id: expedition_position.expedition_id,
               supplier_order_index_id: expedition_position.supplier_order_index_id,
               quantity: transfer_quantity,
-              sorted: false,
-              finition_status: expedition_position.finition_status
+              is_clone: is_clone,
+              sorted: false
             )
           else
-            # Create a new ExpeditionPosition for other destinations
-            new_position = ExpeditionPosition.create!(
+            create_expedition_position(
               expedition_id: expedition_position.expedition_id,
               supplier_order_index_id: expedition_position.supplier_order_index_id,
-              part_id: expedition_position.part_id,
+              part_id: params[:part_id],
               quantity: transfer_quantity,
-              is_clone: expedition_position.is_clone,
-              finition_status: expedition_position.finition_status
+              is_clone: is_clone,
+              finition_status: expedition_position.finition_status,
+              destination_type: destination_type,
+              logistic_place_id: logistic_place_id,
+              subcontractor_id: subcontractor_id
             )
-    
-            # Associate the new position with the destination
-            case destination_type
-            when "subcontractor"
-              subcontractor = SubContractor.find_by(id: params[:sub_contractor_id])
-              unless subcontractor
-                render json: { error: "Subcontractor not found" }, status: :not_found
-                return
-              end
-              new_position.sub_contractors << subcontractor
-    
-            when "logistic_place"
-              logistic_place = LogisticPlace.find_by(id: params[:logistic_place_id])
-              unless logistic_place
-                render json: { error: "Logistic place not found" }, status: :not_found
-                return
-              end
-              new_position.logistic_places << logistic_place
-    
-            else
-              render json: { error: "Invalid destination type for split" }, status: :unprocessable_entity
-              return
-            end
           end
     
-          # Create history for the transfer
-          PartHistory.create!(
+          create_part_history(
             part_id: params[:part_id],
             event_type: destination_type,
-            location_name: destination_name,
-            start_time: Time.current,
-            description: "Part transferred to #{destination_type} #{destination_name}"
+            location_name: destination_name
           )
         else
           render json: { error: "Transfer quantity exceeds available quantity" }, status: :unprocessable_entity
@@ -566,7 +623,7 @@ class PartsController < ApplicationController
                         .joins(client_order_positions: :part)
                         .joins(:client)
                         .where(clients: { user_id: @user.id })
-                        .where('client_order_positions.delivery_date > ?', Date.today)
+                        .where(order_status: 'undelivered')                         
                         .select(
                           'client_orders.id AS order_id',
                           'client_orders.number AS order_number',
@@ -605,7 +662,6 @@ class PartsController < ApplicationController
           id: stock.id,
           address: stock.address,
           contact_name: stock.contact_name,
-          current_quantity: stock.current_quantity,
           client_positions: stock.client_positions.where(part_id: @part_searched.id).map do |position|
             {
               id: position.id,
@@ -623,16 +679,38 @@ class PartsController < ApplicationController
       render json: { error: e.message }, status: :internal_server_error
     end
   
-    # Fetch Consignment Stocks and their Client Positions
     def consignment_stocks_positions_by_client
       consignment_stocks = ConsignmentStock.where(client_id: @client.id).includes(:client_positions)
   
       result = consignment_stocks.map do |stock|
+        stock_part = stock.consignment_stock_parts.find_by(part_id: @part_searched.id)
+
+          consumption_positions = ConsignmentConsumptionPosition
+          .joins(:consignment_consumption, :part)
+          .where(
+            consignment_consumptions: { consignment_stock_id: stock.id },
+            part_id: @part_searched.id
+          )
+          .select(:id, :quantity, :price, :created_at,
+                 'parts.reference AS part_reference',
+            'parts.designation AS part_designation',
+            'consignment_consumptions.begin_date AS begin_date',
+            'consignment_consumptions.end_date AS end_date')
+
         {
           id: stock.id,
           address: stock.address,
           contact_name: stock.contact_name,
-          current_quantity: stock.current_quantity,
+          current_quantity: stock_part&.current_quantity || 0,
+          consumption_positions: consumption_positions.map do |consumption|
+            {
+              id: consumption.id,
+              quantity: consumption.quantity,
+              price: consumption.price,
+              consumption_period: "#{consumption.begin_date&.strftime('%d %b %Y')} - #{consumption.end_date&.strftime('%d %b %Y')}",
+              reference_and_designation: "#{consumption.part_designation} #{consumption.part_reference}"
+            }
+          end,
           client_positions: stock.client_positions.where(part_id: @part_searched.id).map do |position|
             {
               id: position.id,
@@ -650,6 +728,44 @@ class PartsController < ApplicationController
       render json: { error: e.message }, status: :internal_server_error
     end
 
+    def fetch_kpi_metrics
+      # Get all client orders for the user
+      client_orders = ClientOrder.joins(client: :user)
+                              .where(clients: { user_id: params[:user_id] })
+
+      undelivered_expeditions = Expedition.where(status: 'undelivered').count
+    
+      # Calculate total active orders (undelivered orders)
+      total_active_orders = client_orders.where(order_status: 'undelivered').count
+    
+      # Calculate on-time delivery rate
+      delivered_orders = client_orders.where(completed: true)
+      total_delivered = delivered_orders.count
+      
+      on_time_deliveries = ClientOrderPosition.joins(client_order: { client: :user })
+                                            .where(clients: { user_id: params[:user_id] })
+                                            .where('client_orders.completed = ? AND delivery_date >= client_orders.reel_delivery_time', 
+                                                  true)
+                                            .count
+    
+      # Calculate open supplier order positions count
+      open_supplier_positions = SupplierOrderPosition
+        .joins(supplier_order: { supplier: :user })
+        .where(suppliers: { user_id: params[:user_id] })
+        .where.not(status: 'completed')
+        .count
+    
+      on_time_delivery_rate = total_delivered > 0 ? 
+        ((on_time_deliveries.to_f / total_delivered) * 100).round(1) : 
+        0
+    
+      render json: {
+        totalActiveOrders: total_active_orders,
+        openSupplierPositions: open_supplier_positions,
+        runningExpeditions: undelivered_expeditions
+      }
+    end
+
     def fetch_position_history
       client_position = ClientPosition.includes(:supplier_order_index).find_by(id: params[:client_position_id])
     
@@ -659,6 +775,24 @@ class PartsController < ApplicationController
       supplier_order = supplier_order_index&.supplier_order_position&.supplier_order
       client_order = ClientOrder.joins(:client_order_positions).find_by(client_order_positions: { part_id: client_position.part_id })
     
+      part_histories = client_position.part.part_histories
+      .where.not(event_type: 'client')
+      .order(start_time: :asc)
+      .map do |history|
+        duration = history.end_time ? 
+          ((history.end_time - history.start_time) / 1.day).round(2) : 
+          'Ongoing'
+        
+        {
+          event_type: history.event_type,
+          location_name: history.location_name,
+          start_time: history.start_time,
+          end_time: history.end_time,
+          duration_days: duration,
+          description: history.description
+        }
+      end
+
       # Format the history data
       formatted_history = {
         client_position: {
@@ -676,7 +810,8 @@ class PartsController < ApplicationController
         supplier_order: supplier_order&.slice(:id, :number, :quantity, :status, :created_at, :arrival_address, :order_delivery_time)&.merge(
           supplier_name: supplier_order&.supplier&.name
         ),        
-        client_order: client_order&.slice(:id, :number, :quantity, :order_date)
+        client_order: client_order&.slice(:id, :number, :quantity, :order_date),
+        part_histories: part_histories.flatten
       }
     
       render json: formatted_history, status: :ok
@@ -729,7 +864,7 @@ class PartsController < ApplicationController
     
     def fetch_consignment_stocks_by_client
       consignment_stocks = ConsignmentStock.where(client_id: params[:client_id])
-                                           .includes(:client_positions)
+                                           .includes(:client_positions, :consignment_stock_parts)
     
       result = consignment_stocks.map do |stock|
         {
@@ -1039,28 +1174,15 @@ class PartsController < ApplicationController
         client = @part_searched.client
         sub_contractors = @part_searched.sub_contractors.uniq
     
-        # Fetch the latest supplier order position price for the part
-        last_supplier_order_position = SupplierOrderPosition
-                                        .joins(:supplier_order)
-                                        .where(part_id: @part_searched.id)
-                                        .order('supplier_order_positions.created_at DESC')
-                                        .first
-        last_supplier_price = last_supplier_order_position&.price
-    
-        # Fetch the latest client order position price for the part
-        last_client_order_position = ClientOrderPosition
-                                      .joins(:client_order)
-                                      .where(part_id: @part_searched.id)
-                                      .order('client_order_positions.created_at DESC')
-                                      .first
-        last_client_price = last_client_order_position&.price
+        current_supplier_price = @part_searched.current_supplier_price
+        current_client_price = @part_searched.current_client_price
     
         render json: @part_searched.as_json.merge(
           suppliers: suppliers, 
           client: client, 
           sub_contractors: sub_contractors, 
-          supplier_price: last_supplier_price, 
-          client_price: last_client_price
+          supplier_price: current_supplier_price, 
+          client_price: current_client_price
         )
       else
         render json: { error: "Part not found" }, status: :not_found
@@ -1099,6 +1221,30 @@ class PartsController < ApplicationController
       render json: @parts, status: :ok
     rescue ActiveRecord::RecordNotFound => e
       render json: { error: e.message }, status: :not_found
+    end
+
+    def fetch_parts_by_client_and_consignment_stock
+      @parts = Part
+        .joins(:consignment_stock_parts) # Ensure we join the `consignment_stock_parts` table
+        .where(
+          client_id: @client.id,
+          consignment_stock_parts: { consignment_stock_id: params[:consignment_stock_id] }
+        )
+        .where('consignment_stock_parts.current_quantity > 0') # Exclude zero stock quantities
+        .select(
+          'parts.*',
+          'consignment_stock_parts.current_quantity AS quantity' # Use SQL aliasing for stock quantity
+        )
+    
+      render json: @parts.map { |part|
+        part.attributes.merge(
+          current_quantity: part.attributes['quantity'] # Map the SQL alias to the JSON response
+        )
+      }, status: :ok
+    rescue ActiveRecord::RecordNotFound => e
+      render json: { error: e.message }, status: :not_found
+    rescue StandardError => e
+      render json: { error: e.message }, status: :internal_server_error
     end
   
     def parts_by_supplier_orders
@@ -1151,6 +1297,59 @@ class PartsController < ApplicationController
   
     private
 
+    def create_part_history(**params)
+      PartHistory.create!(
+        part_id: params[:part_id],
+        event_type: params[:event_type],
+        location_name: params[:location_name],
+        start_time: Time.current
+      )
+    end
+
+    def create_client_position(**params)
+      ClientPosition.create!(
+        client_id: params[:client_id],
+        part_id: params[:part_id],
+        expedition_id: params[:expedition_id],
+        supplier_order_index_id: params[:supplier_order_index_id],
+        quantity: params[:quantity] || 0,
+        sorted: params[:sorted] || false,
+        is_clone: params[:is_clone] || false
+      )
+    end
+    
+    def create_expedition_position(**params)
+      new_position = ExpeditionPosition.create!(
+        expedition_id: params[:expedition_id],
+        supplier_order_index_id: params[:supplier_order_index_id],
+        part_id: params[:part_id],
+        quantity: params[:quantity],
+        is_clone: params[:is_clone],
+        finition_status: params[:finition_status]
+      )
+    
+      if params[:destination_type].present?
+        case params[:destination_type]
+        when "subcontractor"
+          subcontractor = SubContractor.find_by(id: params[:subcontractor_id])
+          raise ActiveRecord::RecordNotFound, "Subcontractor not found" unless subcontractor
+      
+          new_position.sub_contractors << subcontractor
+        when "logistic_place"
+          logistic_place = LogisticPlace.find_by(id: params[:logistic_place_id])
+          raise ActiveRecord::RecordNotFound, "Logistic place not found" unless logistic_place
+      
+          new_position.logistic_places << logistic_place
+        else
+          raise ArgumentError, "Invalid destination type: #{params[:destination_type]}"
+        end
+      end
+      
+      new_position
+    end
+
+    # STRONG PARAMS PERMISSIONS 
+
     def client_params
       params.require(:client).permit(
         :name, :address, :contact_email, :contact_name,
@@ -1191,6 +1390,8 @@ class PartsController < ApplicationController
           :original_quantity
         ] )
     end
+
+    # SETTING MODELS FOR OTHER FUNCTIONS
 
     def expedition_params
       params.require(:expedition).permit(:real_departure_time, :price, :number, :estimated_departure_time, :arrival_time, :transporter)
