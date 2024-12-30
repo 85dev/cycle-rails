@@ -31,7 +31,6 @@ Rails.application.routes.draw do
   get 'users/:user_id/parts/:part_id/clients/:client_id/standard_stocks_positions_by_client', to: 'parts#standard_stocks_positions_by_client'
   get 'users/:user_id/parts/:part_id/clients/:client_id/consignment_stocks_positions_by_client', to: 'parts#consignment_stocks_positions_by_client'
   get 'users/:user_id/clients/:client_id/parts_by_client', to: 'parts#fetch_parts_by_client'
-  get 'users/:user_id/parts/:part_id/part_history', to: 'parts#fetch_part_history'
   get 'users/:user_id/client_positions/:client_position_id/position_history', to: 'parts#fetch_position_history'
   get 'users/:user_id/kpi_metrics', to: 'parts#fetch_kpi_metrics'
   get 'users/:user_id/clients/:client_id/consignment_stocks/:consignment_stock_id/parts_by_client_and_consignment_stock', to: 'parts#fetch_parts_by_client_and_consignment_stock'

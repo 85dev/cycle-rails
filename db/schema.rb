@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_12_19_140849) do
+ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -163,6 +163,32 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_19_140849) do
     t.datetime "updated_at", null: false
     t.integer "current_quantity"
     t.index ["client_id"], name: "index_consignment_stocks_on_client_id"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.string "address"
+    t.string "contactable_type", null: false
+    t.bigint "contactable_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "role"
+    t.index ["contactable_type", "contactable_id"], name: "index_contacts_on_contactable"
+    t.index ["contactable_type", "contactable_id"], name: "index_contacts_on_contactable_type_and_contactable_id"
+  end
+
+  create_table "expedition_position_histories", force: :cascade do |t|
+    t.bigint "expedition_position_id", null: false
+    t.bigint "part_id", null: false
+    t.string "event_type", null: false
+    t.string "location_name", null: false
+    t.string "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expedition_position_id"], name: "index_expedition_position_histories_on_expedition_position_id"
+    t.index ["part_id"], name: "index_expedition_position_histories_on_part_id"
   end
 
   create_table "expedition_positions", force: :cascade do |t|
@@ -422,8 +448,6 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_19_140849) do
 
   create_table "transporters", force: :cascade do |t|
     t.string "name", null: false
-    t.string "contact_name", null: false
-    t.string "contact_email", null: false
     t.string "transport_type", null: false
     t.bigint "user_id", null: false
     t.datetime "created_at", null: false
@@ -457,6 +481,8 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_19_140849) do
   add_foreign_key "consignment_stock_parts", "consignment_stocks"
   add_foreign_key "consignment_stock_parts", "parts"
   add_foreign_key "consignment_stocks", "clients"
+  add_foreign_key "expedition_position_histories", "expedition_positions"
+  add_foreign_key "expedition_position_histories", "parts"
   add_foreign_key "expedition_positions", "expeditions"
   add_foreign_key "expedition_positions", "parts"
   add_foreign_key "expedition_positions", "supplier_order_indices"

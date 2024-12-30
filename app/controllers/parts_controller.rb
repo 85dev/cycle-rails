@@ -1,12 +1,12 @@
 class PartsController < ApplicationController
-    before_action :set_user, only: [:create_supplier, :subcontractors_index, :logistic_places_index, :expeditions, :parts_by_user, :fetch_supplier_orders_by_user, :create_client, :create_part, :client_index, :fetch_client_orders_by_part, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
+    before_action :set_user, only: [:create_supplier, :subcontractors_index, :logistic_places_index, :expeditions, :parts_by_user, :fetch_supplier_orders_by_user, :create_part, :client_index, :fetch_client_orders_by_part, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_supplier, only: [:parts_by_supplier]
     before_action :set_client, only: [:fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
     before_action :set_supplier_orders, only: [:parts_by_supplier_orders]
     before_action :set_client_orders, only: [:parts_by_client_orders]
-    before_action :set_part, only: [:consignment_stocks_positions_by_client, :fetch_part_history, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
+    before_action :set_part, only: [:consignment_stocks_positions_by_client, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_expedition, only: [:fetch_expedition_orders, :dispatch_expedition]
-    before_action :set_user_by_id, only: [:create_consignment_consumption, :fetch_kpi_metrics, :fetch_future_user_client_orders, :create_subcontractor, :create_logistic_place ]
+    before_action :set_user_by_id, only: [:create_consignment_consumption, :fetch_kpi_metrics, :fetch_future_user_client_orders, :create_subcontractor, :create_logistic_place, :create_client ]
 
     # API calls for models creation [POST]
     # Create PART linked to CLIENT, SUPPLIER and USER
@@ -39,24 +39,36 @@ class PartsController < ApplicationController
         @client = @user.clients.new(client_params)
 
         if @client.save
+          # Process contacts
+          if params[:client][:contacts]
+            params[:client][:contacts].each do |contact_params|
+              @client.contacts.create!(
+                email: contact_params[:email],
+                first_name: contact_params[:first_name],
+                last_name: contact_params[:last_name],
+                role: contact_params[:role]
+              )            
+            end
+          end
+
           # Process consignment stocks
-          if params[:client][:consignmentStocks]
-            params[:client][:consignmentStocks].each do |stock_params|
+          if params[:client][:consignment_stocks]
+            params[:client][:consignment_stocks].each do |stock_params|
+              raise ActiveRecord::RecordInvalid.new(@client) if stock_params[:address].blank?
+
               @client.consignment_stocks.create!(
-                address: stock_params[:address],
-                contact_name: stock_params[:contact_name],
-                contact_email: stock_params[:contact_email]
+                address: stock_params[:address]
               )
             end
           end
 
           # Process standard stocks
-          if params[:client][:standardStocks]
-            params[:client][:standardStocks].each do |stock_params|
+          if params[:client][:standard_stocks]
+            params[:client][:standard_stocks].each do |stock_params|
+              raise ActiveRecord::RecordInvalid.new(@client) if stock_params[:address].blank?
+
               @client.standard_stocks.create!(
-                address: stock_params[:address],
-                contact_name: stock_params[:contact_name],
-                contact_email: stock_params[:contact_email]
+                address: stock_params[:address]
               )
             end
           end
@@ -281,7 +293,7 @@ class PartsController < ApplicationController
 
             total_delivered = supplier_order_position.quantity + shipped_quantity
 
-             # Create a SupplierOrderIndex
+             # Create a SupplierOrderIndex 
             supplier_order_index = SupplierOrderIndex.create!(
               supplier_order_position: supplier_order_position,
               quantity: shipped_quantity,
@@ -398,11 +410,11 @@ class PartsController < ApplicationController
               raise ActiveRecord::RecordNotFound, "Subcontractor not found" unless subcontractor
     
               position.sub_contractors << subcontractor
-              create_part_history(
+              create_expedition_position_history(
+                expedition_position_id: position.id,
                 part_id: part.id,
                 event_type: 'subcontractor',
-                location_name: subcontractor_name,
-                description: "Part sent to subcontractor #{subcontractor_name}"
+                location_name: subcontractor_name
               )
             end
     
@@ -411,11 +423,11 @@ class PartsController < ApplicationController
               raise ActiveRecord::RecordNotFound, "Logistic place not found" unless logistic_place
     
               position.logistic_places << logistic_place
-              create_part_history(
+              create_expedition_position_history(
+                expedition_position_id: position.id,
                 part_id: part.id,
                 event_type: 'logistic_place',
-                location_name: logistic_place_name,
-                description: "Part stored in logistic place #{logistic_place_name}"
+                location_name: logistic_place_name
               )
             end
           end
@@ -522,7 +534,8 @@ class PartsController < ApplicationController
             return render json: { error: "Invalid destination type" }, status: :unprocessable_entity
           end
     
-          create_part_history(
+          create_expedition_position_history(
+            expedition_position_id: expedition_position.id,
             part_id: params[:part_id],
             event_type: destination_type,
             location_name: destination_name
@@ -559,7 +572,8 @@ class PartsController < ApplicationController
             )
           end
     
-          create_part_history(
+          create_expedition_position_history(
+            expedition_position_id: expedition_position.id,
             part_id: params[:part_id],
             event_type: destination_type,
             location_name: destination_name
@@ -775,24 +789,25 @@ class PartsController < ApplicationController
       supplier_order = supplier_order_index&.supplier_order_position&.supplier_order
       client_order = ClientOrder.joins(:client_order_positions).find_by(client_order_positions: { part_id: client_position.part_id })
     
-      part_histories = client_position.part.part_histories
-      .where.not(event_type: 'client')
-      .order(start_time: :asc)
-      .map do |history|
-        duration = history.end_time ? 
-          ((history.end_time - history.start_time) / 1.day).round(2) : 
-          'Ongoing'
-        
-        {
-          event_type: history.event_type,
-          location_name: history.location_name,
-          start_time: history.start_time,
-          end_time: history.end_time,
-          duration_days: duration,
-          description: history.description
-        }
-      end
-
+      # Retrieve expedition position histories
+      expedition_position_histories = ExpeditionPositionHistory
+        .joins(expedition_position: { expedition: :supplier_order_indices })
+        .where(supplier_order_indices: { id: client_position.supplier_order_index_id })
+        .order(created_at: :asc)
+        .map do |history|
+          duration = history.updated_at ? 
+            ((history.updated_at - history.created_at) / 1.day).round(2) : 
+            'Ongoing'
+    
+          {
+            event_type: history.event_type,
+            location_name: history.location_name,
+            start_time: history.created_at,
+            end_time: history.updated_at,
+            duration_days: duration
+          }
+        end
+    
       # Format the history data
       formatted_history = {
         client_position: {
@@ -809,37 +824,34 @@ class PartsController < ApplicationController
         expedition: expedition&.slice(:id, :number, :status, :real_departure_time, :arrival_time),
         supplier_order: supplier_order&.slice(:id, :number, :quantity, :status, :created_at, :arrival_address, :order_delivery_time)&.merge(
           supplier_name: supplier_order&.supplier&.name
-        ),        
+        ),
         client_order: client_order&.slice(:id, :number, :quantity, :order_date),
-        part_histories: part_histories.flatten
+        expedition_position_histories: expedition_position_histories,
+        counts: (expedition_position_histories&.length || 0) +
+                (supplier_order_index ? 1 : 0) +
+                (expedition ? 1 : 0) +
+                (supplier_order ? 1 : 0) +
+                (client_order ? 1 : 0)
       }
     
-      render json: formatted_history, status: :ok
+      # Flatten the global object
+      flattened_history = flatten_object(formatted_history)
+    
+      render json: flattened_history, status: :ok
     rescue ActiveRecord::RecordNotFound => e
       render json: { error: e.message }, status: :not_found
     end
-
-    def fetch_part_history
-      histories = @part_searched.part_histories.order(start_time: :desc)
-      
-      formatted_histories = histories.map do |history|
-        duration = history.end_time ? 
-          ((history.end_time - history.start_time) / 1.day).round(2) : 
-          'Ongoing'
-        
-        {
-          event_type: history.event_type,
-          location_name: history.location_name,
-          start_time: history.start_time,
-          end_time: history.end_time,
-          duration_days: duration,
-          description: history.description
-        }
-      end
     
-      render json: formatted_histories, status: :ok
-    rescue ActiveRecord::RecordNotFound => e
-      render json: { error: e.message }, status: :not_found
+    # Recursive method to flatten nested arrays or hashes
+    def flatten_object(object)
+      case object
+      when Hash
+        object.transform_values { |value| flatten_object(value) }
+      when Array
+        object.flat_map { |value| flatten_object(value) }
+      else
+        object
+      end
     end
 
     def fetch_standard_stocks_by_client
@@ -1297,12 +1309,13 @@ class PartsController < ApplicationController
   
     private
 
-    def create_part_history(**params)
-      PartHistory.create!(
+    def create_expedition_position_history(**params)
+      ExpeditionPositionHistory.create!(
+        expedition_position_id: params[:expedition_position_id],
         part_id: params[:part_id],
         event_type: params[:event_type],
         location_name: params[:location_name],
-        start_time: Time.current
+        description: params[:description] || nil
       )
     end
 
@@ -1352,14 +1365,12 @@ class PartsController < ApplicationController
 
     def client_params
       params.require(:client).permit(
-        :name, :address, :contact_email, :contact_name,
-        consignment_stocks: [:address, :contact_name, :contact_email],
-        standard_stocks: [:address, :contact_name, :contact_email]
+        :name, :address
       )
     end
 
     def supplier_params
-      params.require(:supplier).permit(:name, :address, :contact_email, :contact_name, :knowledge)
+      params.require(:supplier).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
     end
 
     def part_params 
@@ -1373,11 +1384,11 @@ class PartsController < ApplicationController
     end
 
     def subcontractor_params
-      params.require(:subcontractor).permit(:name, :address, :knowledge, :contact_email, :contact_name)
+      params.require(:subcontractor).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
     end
 
     def logistic_place_params
-      params.require(:logistic_place).permit(:name, :address, :knowledge, :contact_email, :contact_name)
+      params.require(:logistic_place).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
     end
 
     def supplier_order_params
