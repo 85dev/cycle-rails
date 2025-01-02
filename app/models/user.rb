@@ -3,8 +3,6 @@ class User < ApplicationRecord
          :jwt_authenticatable,
          jwt_revocation_strategy: JwtDenylist
 
-  has_many :clients
-  has_many :parts
-  has_many :logistic_places
-  has_many :suppliers
+  has_many :accounts, dependent: :destroy
+  has_many :companies, through: :accounts
 end

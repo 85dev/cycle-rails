@@ -1,5 +1,5 @@
 class LogisticPlace < ApplicationRecord
-  belongs_to :user
+  belongs_to :company
 
   has_many :contacts, as: :contactable, dependent: :destroy
   has_and_belongs_to_many :expedition_positions

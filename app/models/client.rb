@@ -1,5 +1,5 @@
 class Client < ApplicationRecord
-  belongs_to :user
+  belongs_to :company
 
   has_many :contacts, as: :contactable, dependent: :destroy
   has_many :standard_stocks, dependent: :destroy

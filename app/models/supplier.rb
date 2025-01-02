@@ -1,5 +1,5 @@
 class Supplier < ApplicationRecord
-  belongs_to :user
+  belongs_to :company
 
   has_many :contacts, as: :contactable
   has_many :expeditions

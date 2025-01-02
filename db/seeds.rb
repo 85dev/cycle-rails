@@ -11,57 +11,79 @@ SubContractor.destroy_all
 SupplierOrder.destroy_all
 ClientOrder.destroy_all
 LogisticPlace.destroy_all
+# This script seeds the database with data: 3 clients, 3 transporters, 
+# 3 subcontractors, 3 suppliers, 3 logistic places, and 5 parts for each client.
 
-# Create Clients
-client1 = Client.create(name: "Client A", user_id: user.id, address: Faker::Address.street_address, country: Faker::Address.country)
-client2 = Client.create(name: "Client B", user_id: user.id, address: Faker::Address.street_address, country: Faker::Address.country)
-
-# Create Suppliers
-supplier1 = Supplier.create(name: "Supplier A", knowledge: "Expert in Iron", user_id: user.id, address: Faker::Address.street_address, country: Faker::Address.country)
-supplier2 = Supplier.create(name: "Supplier B", knowledge: "Expert in Steel", user_id: user.id, address: Faker::Address.street_address, country: Faker::Address.country)
-
-# Create Parts
-part1 = Part.create(designation: "Iron Bolt", reference: "IB001", material: "Iron", drawing: "Drawing A", user_id: user.id)
-part2 = Part.create(designation: "Steel Nut", reference: "SN002", material: "Steel", drawing: "Drawing B", user_id: user.id)
-part3 = Part.create(designation: "Aluminum Washer", reference: "AW003", material: "Aluminum", drawing: "Drawing C", user_id: user.id)
-
-# Create Sub Contractors with supplier_order_id set to nil
-sub_contractor1 = SubContractor.create(part_id: part1.id, user: user, name: "SubContractor A", address: Faker::Address.street_address, country: Faker::Address.country, knowledge: "Iron Welding")
-sub_contractor2 = SubContractor.create(part_id: part2.id, user: user, name: "SubContractor B", address: Faker::Address.street_address, country: Faker::Address.country, knowledge: "Steel Welding")
-
-# Create Supplier Orders and associate them with parts
-supplier_order1 = SupplierOrder.create(supplier_id: supplier1.id, quantity: 100, previsionnal: false, transporter: "DHL", order_date: Time.now, delivery_status: true, batch: "Batch A")
-supplier_order2 = SupplierOrder.create(supplier_id: supplier2.id, quantity: 200, previsionnal: true, transporter: "UPS", order_date: Time.now, delivery_status: false, batch: "Batch B")
-
-# Many-to-Many: Linking Parts and SupplierOrders
-SupplierOrdersPart.create(supplier_order_id: supplier_order1.id, part_id: part1.id)
-SupplierOrdersPart.create(supplier_order_id: supplier_order1.id, part_id: part2.id)
-SupplierOrdersPart.create(supplier_order_id: supplier_order2.id, part_id: part3.id)
-
-# Create Client Orders
-client_order1 = ClientOrder.create(client_id: client1.id, transporter: "FedEx", quantity: 50, order_status: true, order_date: Time.now, number: 1234, batch: "Batch 1234")
-client_order2 = ClientOrder.create(client_id: client2.id, transporter: "TNT", quantity: 75, order_status: false, order_date: Time.now, number: 5678, batch: "Batch 5678")
-
-# Many-to-Many: Linking Parts and ClientOrders
-ClientOrdersPart.create(client_order_id: client_order1.id, part_id: part1.id)
-ClientOrdersPart.create(client_order_id: client_order1.id, part_id: part2.id)
-ClientOrdersPart.create(client_order_id: client_order2.id, part_id: part3.id)
-
-# Create Logistic Places
-logistic_place1 = LogisticPlace.create(user_id: user.id, address: Faker::Address.street_address)
-logistic_place2 = LogisticPlace.create(user_id: user.id, address: Faker::Address.street_address)
-
-# Many-to-Many: Linking Parts and LogisticPlaces
-LogisticPlacesPart.create(logistic_place_id: logistic_place1.id, part_id: part1.id)
-LogisticPlacesPart.create(logistic_place_id: logistic_place1.id, part_id: part2.id)
-LogisticPlacesPart.create(logistic_place_id: logistic_place2.id, part_id: part3.id)
-
-# Many-to-Many: Linking Supplier Orders and LogisticPlaces
-LogisticPlacesSupplierOrder.create(logistic_place_id: logistic_place1.id, supplier_order_id: supplier_order1.id)
-LogisticPlacesSupplierOrder.create(logistic_place_id: logistic_place2.id, supplier_order_id: supplier_order2.id)
-
-# Many-to-Many: Linking SupplierOrders and SubContractors
-SubContractorsSupplierOrder.create(sub_contractor_id: sub_contractor1.id, supplier_order_id: supplier_order1.id)
-SubContractorsSupplierOrder.create(sub_contractor_id: sub_contractor2.id, supplier_order_id: supplier_order2.id)
-
+# Create a company (as all records belong to a company)
+company = Company.create!(
+    name: "Test Company",
+    legal_structure: "LLC",
+    address: "123 Main St",
+    country: "USA",
+    tax_id: "123-456-789",
+    registration_number: "987654321",
+    website: "https://testcompany.com"
+  )
+  
+  # Create clients
+  clients = [
+    { name: "Client A", address: "123 Client St", country: "USA", contact_name: "Alice", contact_email: "alice@clienta.com" },
+    { name: "Client B", address: "456 Client Ave", country: "Canada", contact_name: "Bob", contact_email: "bob@clientb.com" },
+    { name: "Client C", address: "789 Client Blvd", country: "UK", contact_name: "Charlie", contact_email: "charlie@clientc.com" }
+  ].map do |client_attrs|
+    Client.create!(client_attrs.merge(company_id: company.id))
+  end
+  
+  # Create transporters
+  transporters = [
+    { name: "Transporter X", transport_type: "Air" },
+    { name: "Transporter Y", transport_type: "Sea" },
+    { name: "Transporter Z", transport_type: "Land" }
+  ].map do |transporter_attrs|
+    Transporter.create!(transporter_attrs.merge(company_id: company.id))
+  end
+  
+  # Create subcontractors
+  subcontractors = [
+    { name: "Subcontractor A", address: "123 Sub St", country: "USA", knowledge: "Machining", contact_name: "Sub Alice", contact_email: "subalice@suba.com" },
+    { name: "Subcontractor B", address: "456 Sub Ave", country: "Canada", knowledge: "Welding", contact_name: "Sub Bob", contact_email: "subbob@subb.com" },
+    { name: "Subcontractor C", address: "789 Sub Blvd", country: "UK", knowledge: "Painting", contact_name: "Sub Charlie", contact_email: "subcharlie@subc.com" }
+  ].map do |subcontractor_attrs|
+    SubContractor.create!(subcontractor_attrs.merge(company_id: company.id))
+  end
+  
+  # Create suppliers
+  suppliers = [
+    { name: "Supplier A", address: "123 Supplier St", country: "USA", knowledge: "Steel", contact_name: "Supplier Alice", contact_email: "supalice@suppa.com" },
+    { name: "Supplier B", address: "456 Supplier Ave", country: "Canada", knowledge: "Aluminum", contact_name: "Supplier Bob", contact_email: "supbob@suppb.com" },
+    { name: "Supplier C", address: "789 Supplier Blvd", country: "UK", knowledge: "Plastic", contact_name: "Supplier Charlie", contact_email: "supcharlie@suppc.com" }
+  ].map do |supplier_attrs|
+    Supplier.create!(supplier_attrs.merge(company_id: company.id))
+  end
+  
+  # Create logistic places
+  logistic_places = [
+    { name: "Logistic Place A", address: "123 Logistic St", contact_name: "Logistic Alice", contact_email: "logalice@logistica.com" },
+    { name: "Logistic Place B", address: "456 Logistic Ave", contact_name: "Logistic Bob", contact_email: "logbob@logisticb.com" },
+    { name: "Logistic Place C", address: "789 Logistic Blvd", contact_name: "Logistic Charlie", contact_email: "logcharlie@logisticc.com" }
+  ].map do |logistic_place_attrs|
+    LogisticPlace.create!(logistic_place_attrs.merge(company_id: company.id))
+  end
+  
+  # Create parts for each client
+  clients.each do |client|
+    5.times do |i|
+      Part.create!(
+        designation: "Part #{i + 1} for #{client.name}",
+        reference: "REF#{client.id}-#{i + 1}",
+        material: %w[Steel Aluminum Plastic].sample,
+        drawing: "DRAW#{client.id}-#{i + 1}",
+        weight: rand(10.0..50.0).round(2),
+        client_id: client.id,
+        company_id: company.id,
+        price: rand(100..500)
+      )
+    end
+  end
+  
 puts "Seeding completed successfully!"

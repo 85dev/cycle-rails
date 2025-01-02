@@ -1,5 +1,5 @@
 class Part < ApplicationRecord
-  belongs_to :user
+  belongs_to :company
   belongs_to :client
 
   has_many :client_order_positions, dependent: :destroy

@@ -1,20 +1,45 @@
 class PartsController < ApplicationController
-    before_action :set_user, only: [:create_supplier, :subcontractors_index, :logistic_places_index, :expeditions, :parts_by_user, :fetch_supplier_orders_by_user, :create_part, :client_index, :fetch_client_orders_by_part, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
+    before_action :set_user_by_id, only: [:create_company, :companies_index]
     before_action :set_supplier, only: [:parts_by_supplier]
     before_action :set_client, only: [:fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
     before_action :set_supplier_orders, only: [:parts_by_supplier_orders]
     before_action :set_client_orders, only: [:parts_by_client_orders]
     before_action :set_part, only: [:consignment_stocks_positions_by_client, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_expedition, only: [:fetch_expedition_orders, :dispatch_expedition]
-    before_action :set_user_by_id, only: [:create_consignment_consumption, :fetch_kpi_metrics, :fetch_future_user_client_orders, :create_subcontractor, :create_logistic_place, :create_client ]
-
+    before_action :set_company, only: [
+      :create_transporter,
+      :transporters_index_by_company,
+      :fetch_uncompleted_supplier_orders_positions_by_company,
+      :fetch_supplier_orders_positions_by_company_and_part,
+      :create_supplier, 
+      :fetch_delivered_expeditions,
+      :subcontractors_index, 
+      :logistic_places_index, 
+      :expeditions_by_company, 
+      :fetch_undelivered_expeditions,
+      :parts_by_company, 
+      :fetch_supplier_orders_by_company, 
+      :create_part, 
+      :client_index, 
+      :fetch_client_orders_by_part, 
+      :fetch_expeditions_supplier_order_indices_by_part, 
+      :fetch_logistic_places_by_part, 
+      :fetch_sub_contractors_by_part, 
+      :fetch_supplier_orders_by_part,
+      :create_consignment_consumption, 
+      :fetch_kpi_metrics, 
+      :fetch_future_company_client_orders, 
+      :create_subcontractor, 
+      :create_logistic_place, 
+      :create_client
+    ]
     # API calls for models creation [POST]
-    # Create PART linked to CLIENT, SUPPLIER and USER
+    # Create PART linked to CLIENT, SUPPLIER and COMPANY
     def create_part
       @client = Client.find_by(id: params[:client_id])
       @supplier = Supplier.find_by(id: params[:supplier_id])
 
-      @part = @user.parts.new(part_params)
+      @part = @company.parts.new(part_params)
       @part.client = @client
 
       ActiveRecord::Base.transaction do
@@ -33,10 +58,20 @@ class PartsController < ApplicationController
       end
     end
 
-    # Create CLIENT linked to USER along with its stocks
+    def create_transporter
+      transporter = @company.transporters.new(transporter_params)
+  
+      if transporter.save
+        render json: { message: 'Transporter created successfully', transporter: transporter }, status: :created
+      else
+        render json: { errors: transporter.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
+
+    # Create CLIENT linked to COMPANY along with its stocks
     def create_client
       ActiveRecord::Base.transaction do
-        @client = @user.clients.new(client_params)
+        @client = @company.clients.new(client_params)
 
         if @client.save
           # Process contacts
@@ -82,9 +117,9 @@ class PartsController < ApplicationController
       render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
     end
 
-    # Create SUBCONTRACTOR linked to USER
+    # Create SUBCONTRACTOR linked to COMPANY
     def create_subcontractor
-      merged_params = subcontractor_params.merge(user: @user)
+      merged_params = subcontractor_params.merge(company: @company)
 
       @subcontractor = SubContractor.new(merged_params)
 
@@ -95,9 +130,9 @@ class PartsController < ApplicationController
       end
     end
 
-    # Create SUBCONTRACTOR linked to USER
+    # Create SUBCONTRACTOR linked to COMPANY
     def create_logistic_place
-      merged_params = logistic_place_params.merge(user: @user)
+      merged_params = logistic_place_params.merge(company: @company)
 
       @logistic_place = LogisticPlace.new(merged_params)
 
@@ -108,14 +143,37 @@ class PartsController < ApplicationController
       end
     end
 
-    # Create CLIENT linked to USER
+    # Create CLIENT linked to COMPANY
     def create_supplier
-      @supplier = @user.suppliers.new(supplier_params)
+      @supplier = @company.suppliers.new(supplier_params)
 
       if @supplier.save
         render json: { success: 'supplier created successfully', supplier: @supplier }, status: :created
       else
         render json: { errors: @supplier.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
+
+    def create_company
+      ActiveRecord::Base.transaction do
+        # Create the company with provided parameters
+        @company = Company.new(company_params)
+        
+        if @company.save
+          # Automatically associate the user with the company as an owner
+          Account.create!(
+            user_id: @user.id, # Assuming you have a current_user helper from authentication
+            company_id: @company.id,
+            is_owner: true,
+            status: 'accepted'
+          )
+          
+          render json: { success: 'Company created successfully', company: @company }, status: :created
+        else
+          render json: { errors: @company.errors.full_messages }, status: :unprocessable_entity
+        end
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { errors: e.message }, status: :unprocessable_entity
       end
     end
 
@@ -275,8 +333,10 @@ class PartsController < ApplicationController
     def create_expedition
       @expedition = Expedition.new(expedition_params)
       supplier = Supplier.find_by(id: params[:supplier_id])
+      transporter = Transporter.find_by(id: params[:transporter_id])
       @expedition.supplier = supplier
-    
+      @expedition.transporter = transporter
+
       # Parse supplier order IDs, quantities, and partials from the URL parameters
       ids = params[:supplier_order_position_ids].split(',').map(&:strip)
       quantities = params[:supplier_order_position_quantities].split(',').map(&:strip).map(&:to_i)
@@ -590,7 +650,7 @@ class PartsController < ApplicationController
     end
 
     # API calls for models fetch [GET] 
-    def parts_by_user
+    def parts_by_company
       @parts = Part
         .joins(<<-SQL)
           LEFT JOIN client_order_positions ON client_order_positions.part_id = parts.id
@@ -598,7 +658,7 @@ class PartsController < ApplicationController
           LEFT JOIN clients ON parts.client_id = clients.id
           LEFT JOIN client_positions ON client_positions.part_id = parts.id
         SQL
-        .where(user_id: @user.id)
+        .where(company_id: @company.id)
         .select(
           'parts.*',
           'MAX(client_order_positions.price) AS latest_client_price',
@@ -632,11 +692,11 @@ class PartsController < ApplicationController
       render json: { error: e.message }, status: :internal_server_error
     end
 
-    def fetch_future_user_client_orders
+    def fetch_future_company_client_orders
       client_orders = ClientOrder
                         .joins(client_order_positions: :part)
                         .joins(:client)
-                        .where(clients: { user_id: @user.id })
+                        .where(clients: { company_id: @company.id })
                         .where(order_status: 'undelivered')                         
                         .select(
                           'client_orders.id AS order_id',
@@ -665,7 +725,7 @@ class PartsController < ApplicationController
     
       render json: formatted_orders, status: :ok
     rescue ActiveRecord::RecordNotFound
-      render json: { error: 'User not found' }, status: :not_found
+      render json: { error: 'Company not found' }, status: :not_found
     end
 
     def standard_stocks_positions_by_client
@@ -743,9 +803,9 @@ class PartsController < ApplicationController
     end
 
     def fetch_kpi_metrics
-      # Get all client orders for the user
-      client_orders = ClientOrder.joins(client: :user)
-                              .where(clients: { user_id: params[:user_id] })
+      # Get all client orders for the company
+      client_orders = ClientOrder.joins(client: :company)
+                              .where(clients: { company_id: params[:company_id] })
 
       undelivered_expeditions = Expedition.where(status: 'undelivered').count
     
@@ -756,16 +816,16 @@ class PartsController < ApplicationController
       delivered_orders = client_orders.where(completed: true)
       total_delivered = delivered_orders.count
       
-      on_time_deliveries = ClientOrderPosition.joins(client_order: { client: :user })
-                                            .where(clients: { user_id: params[:user_id] })
+      on_time_deliveries = ClientOrderPosition.joins(client_order: { client: :company })
+                                            .where(clients: { company_id: params[:company_id] })
                                             .where('client_orders.completed = ? AND delivery_date >= client_orders.reel_delivery_time', 
                                                   true)
                                             .count
     
       # Calculate open supplier order positions count
       open_supplier_positions = SupplierOrderPosition
-        .joins(supplier_order: { supplier: :user })
-        .where(suppliers: { user_id: params[:user_id] })
+        .joins(supplier_order: { supplier: :company })
+        .where(suppliers: { company_id: params[:company_id] })
         .where.not(status: 'completed')
         .count
     
@@ -926,11 +986,11 @@ class PartsController < ApplicationController
       render json: supplier_orders_with_client_numbers
     end
 
-    def fetch_supplier_orders_by_user
+    def fetch_supplier_orders_by_company
       @supplier_orders = SupplierOrder
-                          .joins(supplier: :user) # Join suppliers and users
+                          .joins(supplier: :company) # Join suppliers and companys
                           .joins(:parts) # Join parts table
-                          .where(suppliers: { user_id: params[:user_id] }) # Filter by user_id
+                          .where(suppliers: { company_id: params[:company_id] }) # Filter by company_id
                           .select(
                             'supplier_orders.*',
                             'parts.reference AS part_reference',
@@ -945,11 +1005,11 @@ class PartsController < ApplicationController
       end
     end
 
-    def fetch_uncompleted_supplier_orders_positions_by_user
+    def fetch_uncompleted_supplier_orders_positions_by_company
       @supplier_orders_positions = SupplierOrderPosition
-        .joins(supplier_order: { supplier: :user }) # Join suppliers and users
+        .joins(supplier_order: { supplier: :company }) # Join suppliers and companys
         .joins(:part) # Join parts table
-        .where(suppliers: { user_id: params[:user_id] }) # Filter by user_id
+        .where(suppliers: { company_id: params[:company_id] }) # Filter by company_id
         .where.not(status: 'completed') # Exclude completed supplier order positions
         .select(
           'supplier_order_positions.*',
@@ -973,11 +1033,11 @@ class PartsController < ApplicationController
       render json: { error: e.message }, status: :internal_server_error
     end
 
-    def fetch_supplier_orders_positions_by_user_and_part
+    def fetch_supplier_orders_positions_by_company_and_part
       @supplier_orders_positions = SupplierOrderPosition
-                       .joins(supplier_order: { supplier: :user }) # Join suppliers and users
+                       .joins(supplier_order: { supplier: :company }) # Join suppliers and companys
                        .joins(:part) # Join parts table
-                       .where(suppliers: { user_id: params[:user_id] }) # Filter by user_id
+                       .where(suppliers: { company_id: params[:company_id] }) # Filter by company_id
                        .where(parts: { id: params[:part_id] })
                        .select(
                          'supplier_order_positions.*',
@@ -1037,12 +1097,18 @@ class PartsController < ApplicationController
       render json: { error: e.message }, status: :not_found
     end
 
-    def expeditions
+    def expeditions_by_company
       expeditions = Expedition
       .joins(:supplier) # Join suppliers table
-      .where(suppliers: { user_id: params[:user_id] }) # Filter by user's suppliers
+      .where(suppliers: { company_id: params[:company_id] }) # Filter by company's suppliers
 
       render json: expeditions
+    end
+
+    def transporters_index_by_company
+      transporters = Transporter.where(company_id: @company.id) # Filter by company_id
+
+      render json: transporters, status: :ok
     end
 
     def fetch_undelivered_expeditions
@@ -1050,7 +1116,7 @@ class PartsController < ApplicationController
         .joins(:supplier)
         .left_joins(:supplier_order_indices) # Use supplier_order_indices for the count
         .where(status: 'undelivered')
-        .where(suppliers: { user_id: params[:user_id] })
+        .where(suppliers: { company_id: params[:company_id] })
         .select(
           'expeditions.*', 
           'suppliers.name AS supplier_name', 
@@ -1074,7 +1140,7 @@ class PartsController < ApplicationController
       expeditions = Expedition
       .where(status: 'delivered')
       .joins(:supplier) # Join suppliers table
-      .where(suppliers: { user_id: params[:user_id] }) # Filter by user's suppliers
+      .where(suppliers: { company_id: params[:company_id] }) # Filter by company's suppliers
       .select('expeditions.*, suppliers.name AS supplier_name') # Include supplier_name in the query
 
       result = expeditions.map do |expedition|
@@ -1201,23 +1267,45 @@ class PartsController < ApplicationController
       end
     end
 
+    def companies_index
+        user_id = @user.id
+        # Fetch companies where the user does not already have an account
+        @companies = Company.left_joins(:accounts)
+        .where('accounts.user_id IS NULL OR accounts.user_id != ?', user_id)
+        .distinct
+
+      render json: @companies
+    end
+
+    def search_company_by_name
+      name = params[:name]
+  
+      company = Company.find_by(name: name)
+  
+      if company
+        render json: company, status: :ok
+      else
+        render json: { error: 'Company not found' }, status: :not_found
+      end
+    end
+
     def client_index
-      @clients = Client.where(user_id: params[:user_id])
+      @clients = Client.where(company_id: params[:company_id])
       render json: @clients
     end
 
     def supplier_index
-      @suppliers = Supplier.where(user_id: params[:user_id])
+      @suppliers = Supplier.where(company_id: params[:company_id])
       render json: @suppliers
     end
 
     def subcontractors_index
-      @subcontractors = SubContractor.where(user_id: params[:user_id])
+      @subcontractors = SubContractor.where(company_id: params[:company_id])
       render json: @subcontractors
     end
 
     def logistic_places_index
-      @logistic_places = LogisticPlace.where(user_id: params[:user_id])
+      @logistic_places = LogisticPlace.where(company_id: params[:company_id])
       render json: @logistic_places
     end
   
@@ -1309,6 +1397,7 @@ class PartsController < ApplicationController
   
     private
 
+    # Models creations
     def create_expedition_position_history(**params)
       ExpeditionPositionHistory.create!(
         expedition_position_id: params[:expedition_position_id],
@@ -1363,6 +1452,10 @@ class PartsController < ApplicationController
 
     # STRONG PARAMS PERMISSIONS 
 
+    def transporter_params
+      params.require(:transporter).permit(:name, :is_air, :is_land, :is_sea)
+    end
+
     def client_params
       params.require(:client).permit(
         :name, :address
@@ -1378,7 +1471,7 @@ class PartsController < ApplicationController
     end
 
     def client_order_params
-      params.require(:client_order).permit(:number, :price, :client_contact, :order_date, :order_delivery_time, :client_id, :quantity, :transporter, :user_id, :part_id,
+      params.require(:client_order).permit(:number, :price, :client_contact, :order_date, :order_delivery_time, :client_id, :quantity, :transporter, :company_id, :part_id,
         client_order_positions: [:part_id, :price, :quantity, :delivery_date]
       )
     end
@@ -1392,7 +1485,7 @@ class PartsController < ApplicationController
     end
 
     def supplier_order_params
-      params.require(:supplier_order).permit(:number, :price, :quantity_status, :supplier_contact, :order_date, :order_delivery_time, :estimated_delivery_time, :estimated_departure_time, :supplier_id, :quantity, :transporter, :user_id, :part_id, 
+      params.require(:supplier_order).permit(:number, :price, :quantity_status, :supplier_contact, :order_date, :order_delivery_time, :estimated_delivery_time, :estimated_departure_time, :supplier_id, :quantity, :transporter, :company_id, :part_id, 
         supplier_order_positions_attributes: [
           :part_id,
           :price,
@@ -1402,10 +1495,33 @@ class PartsController < ApplicationController
         ] )
     end
 
-    # SETTING MODELS FOR OTHER FUNCTIONS
+    def company_params
+      params.require(:company).permit(
+        :name,
+        :legal_structure,
+        :address,
+        :city,
+        :postal_code,
+        :country,
+        :tax_id,
+        :registration_number,
+        :website,
+        :authorized_signatory,
+        :tax_rate,
+        :invoice_prefix,
+        :invoice_terms,
+        :legal_notice
+      )
+    end
 
     def expedition_params
       params.require(:expedition).permit(:real_departure_time, :price, :number, :estimated_departure_time, :arrival_time, :transporter)
+    end
+
+    # SETTING MODELS FOR OTHER FUNCTIONS
+
+    def set_company
+      @company = Company.find_by(id: params[:company_id])
     end
 
     def set_part

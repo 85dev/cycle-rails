@@ -10,9 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
+
+  create_table "accounts", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "company_id", null: false
+    t.string "status", default: "pending", null: false
+    t.boolean "is_owner", default: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "requested_owner_rights"
+    t.index ["company_id"], name: "index_accounts_on_company_id"
+    t.index ["user_id"], name: "index_accounts_on_user_id"
+  end
 
   create_table "client_order_positions", force: :cascade do |t|
     t.bigint "client_order_id", null: false
@@ -104,14 +116,14 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
 
   create_table "clients", force: :cascade do |t|
     t.string "name"
-    t.bigint "user_id", null: false
     t.string "address"
     t.string "country"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "contact_name"
     t.string "contact_email"
-    t.index ["user_id"], name: "index_clients_on_user_id"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_clients_on_company_id"
   end
 
   create_table "clients_expedition_positions", id: false, force: :cascade do |t|
@@ -119,6 +131,24 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.bigint "client_id", null: false
     t.index ["client_id", "expedition_position_id"], name: "idx_on_client_id_expedition_position_id_4e0b98a38c"
     t.index ["expedition_position_id", "client_id"], name: "idx_on_expedition_position_id_client_id_1030e66625"
+  end
+
+  create_table "companies", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "legal_structure", null: false
+    t.string "address", null: false
+    t.string "country", null: false
+    t.string "tax_id", null: false
+    t.string "registration_number", null: false
+    t.string "website"
+    t.string "authorized_signatory"
+    t.decimal "tax_rate", precision: 5, scale: 2, default: "20.0"
+    t.string "invoice_prefix"
+    t.text "invoice_terms"
+    t.string "currency", default: "EUR", null: false
+    t.text "legal_notice"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "consignment_consumption_positions", force: :cascade do |t|
@@ -231,7 +261,9 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.string "number"
     t.string "status"
     t.decimal "price"
+    t.bigint "transporter_id", null: false
     t.index ["supplier_id"], name: "index_expeditions_on_supplier_id"
+    t.index ["transporter_id"], name: "index_expeditions_on_transporter_id"
   end
 
   create_table "jwt_denylist", force: :cascade do |t|
@@ -243,14 +275,14 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
   end
 
   create_table "logistic_places", force: :cascade do |t|
-    t.bigint "user_id", null: false
     t.string "address"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "name"
     t.string "contact_email"
     t.string "contact_name"
-    t.index ["user_id"], name: "index_logistic_places_on_user_id"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_logistic_places_on_company_id"
   end
 
   create_table "logistic_places_parts", id: false, force: :cascade do |t|
@@ -292,7 +324,6 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.string "reference"
     t.string "material"
     t.string "drawing"
-    t.bigint "user_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "client_id", null: false
@@ -300,8 +331,9 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.float "weight"
     t.decimal "current_client_price"
     t.decimal "current_supplier_price"
+    t.bigint "company_id", null: false
     t.index ["client_id"], name: "index_parts_on_client_id"
-    t.index ["user_id"], name: "index_parts_on_user_id"
+    t.index ["company_id"], name: "index_parts_on_company_id"
   end
 
   create_table "parts_sub_contractors", id: false, force: :cascade do |t|
@@ -339,10 +371,10 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.string "knowledge"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
     t.string "contact_email"
     t.string "contact_name"
-    t.index ["user_id"], name: "index_sub_contractors_on_user_id"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_sub_contractors_on_company_id"
   end
 
   create_table "sub_contractors_supplier_orders", id: false, force: :cascade do |t|
@@ -436,23 +468,25 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
   create_table "suppliers", force: :cascade do |t|
     t.string "name"
     t.string "knowledge"
-    t.bigint "user_id", null: false
     t.string "address"
     t.string "country"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "contact_name"
     t.string "contact_email"
-    t.index ["user_id"], name: "index_suppliers_on_user_id"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_suppliers_on_company_id"
   end
 
   create_table "transporters", force: :cascade do |t|
     t.string "name", null: false
-    t.string "transport_type", null: false
-    t.bigint "user_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["user_id"], name: "index_transporters_on_user_id"
+    t.bigint "company_id", null: false
+    t.boolean "is_land", default: false, null: false
+    t.boolean "is_sea", default: false, null: false
+    t.boolean "is_air", default: false, null: false
+    t.index ["company_id"], name: "index_transporters_on_company_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -467,6 +501,8 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  add_foreign_key "accounts", "companies"
+  add_foreign_key "accounts", "users"
   add_foreign_key "client_order_positions", "client_orders"
   add_foreign_key "client_order_positions", "parts"
   add_foreign_key "client_orders", "clients"
@@ -474,7 +510,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
   add_foreign_key "client_positions", "expeditions"
   add_foreign_key "client_positions", "parts"
   add_foreign_key "client_positions", "supplier_order_indices"
-  add_foreign_key "clients", "users"
+  add_foreign_key "clients", "companies"
   add_foreign_key "consignment_consumption_positions", "consignment_consumptions"
   add_foreign_key "consignment_consumption_positions", "parts"
   add_foreign_key "consignment_consumptions", "consignment_stocks"
@@ -487,19 +523,20 @@ ActiveRecord::Schema[7.1].define(version: 2024_12_21_170724) do
   add_foreign_key "expedition_positions", "parts"
   add_foreign_key "expedition_positions", "supplier_order_indices"
   add_foreign_key "expeditions", "suppliers"
-  add_foreign_key "logistic_places", "users"
+  add_foreign_key "expeditions", "transporters"
+  add_foreign_key "logistic_places", "companies"
   add_foreign_key "part_histories", "parts"
   add_foreign_key "part_histories_tables", "parts"
   add_foreign_key "parts", "clients"
-  add_foreign_key "parts", "users"
+  add_foreign_key "parts", "companies"
   add_foreign_key "standard_stocks", "clients"
-  add_foreign_key "sub_contractors", "users"
+  add_foreign_key "sub_contractors", "companies"
   add_foreign_key "supplier_order_indices", "expeditions"
   add_foreign_key "supplier_order_indices", "parts"
   add_foreign_key "supplier_order_indices", "supplier_order_positions"
   add_foreign_key "supplier_order_positions", "parts"
   add_foreign_key "supplier_order_positions", "supplier_orders"
   add_foreign_key "supplier_orders", "suppliers"
-  add_foreign_key "suppliers", "users"
-  add_foreign_key "transporters", "users"
+  add_foreign_key "suppliers", "companies"
+  add_foreign_key "transporters", "companies"
 end
