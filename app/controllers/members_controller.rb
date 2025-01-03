@@ -24,7 +24,7 @@ class MembersController < ApplicationController
           .where(status: 'pending', company_id: owned_companies)
           .select(
             'accounts.id AS account_id,
-            accounts.is_owner AS is_owner,
+            accounts.requested_owner_rights AS requested_owner_rights,
             accounts.status AS request_status,
             companies.name AS company_name,
             users.email AS requester_email,
@@ -35,7 +35,7 @@ class MembersController < ApplicationController
       render json: pending_requests.map { |req| {
         request_status: req.request_status,
         account_id: req.account_id,
-        is_owner: req.is_owner,
+        requested_owner_rights: req.requested_owner_rights,
         company_name: req.company_name,
         requester_email: req.requester_email,
         created_at: req.created_at
@@ -51,7 +51,7 @@ class MembersController < ApplicationController
         {
           id: account.id,
           company_name: account.company_name,
-          is_owner: account.is_owner,
+          requested_owner_rights: account.requested_owner_rights,
           created_at: account.created_at,
           updated_at: account.updated_at
         }

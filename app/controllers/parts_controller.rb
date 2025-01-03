@@ -1268,12 +1268,11 @@ class PartsController < ApplicationController
     end
 
     def companies_index
-        user_id = @user.id
-        # Fetch companies where the user does not already have an account
-        @companies = Company.left_joins(:accounts)
-        .where('accounts.user_id IS NULL OR accounts.user_id != ?', user_id)
-        .distinct
-
+      user_id = @user.id
+    
+      # Fetch companies where the user does NOT have an account
+      @companies = Company.where.not(id: Account.where(user_id: user_id).select(:company_id))
+    
       render json: @companies
     end
 
