@@ -152,10 +152,15 @@ class MembersController < ApplicationController
 
     def show 
         user = get_user_from_token
-        render json: {
+        if user
+          render json: {
             message: 'Successfully logged in.',
             user: user
-        }
+          }
+        else
+          render json: { error: 'Incorrect password or email'}
+        end
+
     end
 
     private

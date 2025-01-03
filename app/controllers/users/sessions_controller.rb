@@ -4,10 +4,16 @@ class Users::SessionsController < Devise::SessionsController
     private
 
     def respond_with(_resource, _opts = {})
-        render json: {
-            message: 'You are logged in.',
-            user: current_user
-        }, status: :ok
+        if current_user
+            render json: {
+              message: 'You are logged in.',
+              user: current_user
+            }, status: :ok
+          else
+            render json: {
+              message: 'No user found.'
+            }, status: :unauthorized
+          end
     end
 
     def respond_to_on_destroy
