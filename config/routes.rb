@@ -18,8 +18,12 @@ Rails.application.routes.draw do
 
   # Separate GET fetch routes for related data
   get 'companies/search_company_by_name', to: 'parts#search_company_by_name'
+  get 'companies/:company_id/client_by_name', to: 'parts#fetch_client_by_name'
+  get 'companies/:company_id/client_orders_by_company', to: 'parts#fetch_client_orders_by_company'
+  get 'companies/:company_id/supplier_orders_by_company', to: 'parts#fetch_supplier_orders_by_company'
   get 'companies/:company_id/part_related_data/:part_id', to: 'parts#part_related_data'
   get 'companies/:company_id/parts', to: 'parts#parts_by_company'
+  get 'companies/:company_id/suppliers/:supplier_id/parts_by_supplier', to: 'parts#fetch_parts_by_supplier'
   get 'companies/:company_id/expeditions/:expedition_id/supplier_orders', to: 'parts#fetch_expedition_orders'
   get 'companies/:company_id/parts/:part_id/supplier_orders', to: 'parts#fetch_supplier_orders_by_part'
   get 'companies/:company_id/parts/:part_id/client_orders', to: 'parts#fetch_client_orders_by_part'
@@ -40,6 +44,7 @@ Rails.application.routes.draw do
   get 'companies/:company_id/parts/:part_id/clients/:client_id/standard_stocks_positions_by_client', to: 'parts#standard_stocks_positions_by_client'
   get 'companies/:company_id/parts/:part_id/clients/:client_id/consignment_stocks_positions_by_client', to: 'parts#consignment_stocks_positions_by_client'
   get 'companies/:company_id/clients/:client_id/parts_by_client', to: 'parts#fetch_parts_by_client'
+  get 'companies/:company_id/clients/:client_id/contacts_by_client', to: 'parts#fetch_contacts_by_client'
   get 'companies/:company_id/client_positions/:client_position_id/position_history', to: 'parts#fetch_position_history'
   get 'companies/:company_id/kpi_metrics', to: 'parts#fetch_kpi_metrics'
   get 'companies/:company_id/clients/:client_id/consignment_stocks/:consignment_stock_id/parts_by_client_and_consignment_stock', to: 'parts#fetch_parts_by_client_and_consignment_stock'
@@ -58,7 +63,7 @@ Rails.application.routes.draw do
   post 'companies/:company_id/create_client', to: 'parts#create_client'
   post 'companies/:company_id/create_expedition', to: 'parts#create_expedition'
   post 'companies/:company_id/create_supplier', to: 'parts#create_supplier'
-  post 'companies/:company_id/create_sub_contractor', to: "parts#create_subcontractor"
+  post 'companies/:company_id/create_sub_contractor', to: "parts#create_sub_contractor"
   post 'companies/:company_id/create_logistic_place', to: "parts#create_logistic_place"
   post 'companies/:company_id/expeditions/:expedition_id/dispatch_expedition', to: 'parts#dispatch_expedition'
   post 'companies/:company_id/clients/:client_id/sort_client_positions', to: 'parts#sort_client_positions'
@@ -75,6 +80,12 @@ Rails.application.routes.draw do
   get 'companies/:company_id/logistic_places', to: 'parts#logistic_places_index'
   get 'companies/:company_id/transporters_index', to: 'parts#transporters_index_by_company'
   get 'users/:user_id/companies_index', to: 'parts#companies_index'
+
+
+  # Routes GET/POST for generating, updating and fetching PDF and models dedicated to PDF generation
+  post 'companies/:company_id/expedition_positions/:expedition_position_id/delivery_slip', to: 'pdf_generator#create_delivery_slip'
+  get 'pdf_generator/:delivery_slip_id/generate_pdf', to: 'pdf_generator#generate_delivery_slip_pdf'
+  get 'pdf_generator/:client_id/last_delivery_slip', to: 'pdf_generator#fetch_last_delivery_slip_by_client'
 
   # Health check route
 

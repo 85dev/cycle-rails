@@ -1,12 +1,16 @@
 class PartsController < ApplicationController
     before_action :set_user_by_id, only: [:create_company, :companies_index]
-    before_action :set_supplier, only: [:parts_by_supplier]
-    before_action :set_client, only: [:fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
+    before_action :set_supplier, only: [:fetch_parts_by_supplier]
+    before_action :set_client, only: [:fetch_contacts_by_client, :create_part, :fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
     before_action :set_supplier_orders, only: [:parts_by_supplier_orders]
     before_action :set_client_orders, only: [:parts_by_client_orders]
-    before_action :set_part, only: [:consignment_stocks_positions_by_client, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
+    before_action :set_part, only: [ :consignment_stocks_positions_by_client, :fetch_client_orders_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
     before_action :set_expedition, only: [:fetch_expedition_orders, :dispatch_expedition]
     before_action :set_company, only: [
+      :fetch_company_addresses_and_client_adresses_by_name,
+      :fetch_contacts_by_client,
+      :fetch_client_orders_by_company,
+      :fetch_supplier_orders_by_company,
       :create_transporter,
       :transporters_index_by_company,
       :fetch_uncompleted_supplier_orders_positions_by_company,
@@ -29,22 +33,21 @@ class PartsController < ApplicationController
       :create_consignment_consumption, 
       :fetch_kpi_metrics, 
       :fetch_future_company_client_orders, 
-      :create_subcontractor, 
+      :create_sub_contractor, 
       :create_logistic_place, 
       :create_client
     ]
     # API calls for models creation [POST]
     # Create PART linked to CLIENT, SUPPLIER and COMPANY
     def create_part
-      @client = Client.find_by(id: params[:client_id])
-      @supplier = Supplier.find_by(id: params[:supplier_id])
+      suppliers = Supplier.where(id: params[:supplier_ids])
 
       @part = @company.parts.new(part_params)
       @part.client = @client
 
       ActiveRecord::Base.transaction do
         if @part.save
-          @part.suppliers << @supplier
+          @part.suppliers << suppliers
 
           if params[:subcontractor_ids].present?
             subcontractors = SubContractor.where(id: params[:subcontractor_ids])
@@ -118,12 +121,22 @@ class PartsController < ApplicationController
     end
 
     # Create SUBCONTRACTOR linked to COMPANY
-    def create_subcontractor
+    def create_sub_contractor
       merged_params = subcontractor_params.merge(company: @company)
 
       @subcontractor = SubContractor.new(merged_params)
 
       if @subcontractor.save
+        if params[:subcontractor][:contacts]
+          params[:subcontractor][:contacts].each do |contact_params|
+            @subcontractor.contacts.create!(
+              email: contact_params[:email],
+              first_name: contact_params[:first_name],
+              last_name: contact_params[:last_name],
+              role: contact_params[:role]
+            )            
+          end
+        end
         render json: { success: 'Subcontractor created successfully', subcontractor: @subcontractor }, status: :created
       else
         render json: { errors: @subcontractor.errors.full_messages }, status: :unprocessable_entity
@@ -148,6 +161,16 @@ class PartsController < ApplicationController
       @supplier = @company.suppliers.new(supplier_params)
 
       if @supplier.save
+        if params[:supplier][:contacts]
+          params[:supplier][:contacts].each do |contact_params|
+            @supplier.contacts.create!(
+              email: contact_params[:email],
+              first_name: contact_params[:first_name],
+              last_name: contact_params[:last_name],
+              role: contact_params[:role]
+            )            
+          end
+        end
         render json: { success: 'supplier created successfully', supplier: @supplier }, status: :created
       else
         render json: { errors: @supplier.errors.full_messages }, status: :unprocessable_entity
@@ -250,9 +273,14 @@ class PartsController < ApplicationController
               delivery_date: position[:delivery_date],
               status: 'undelivered'
             )
-
-            part.update!(current_client_price: position[:price])
           end 
+
+          contact = Contact.find_by(id: params[:contact_id])
+
+          if contact
+            @client_order.contact = contact
+            @client_order.save!
+          end
 
           render json: { success: "Client order created successfully", client_order: @client_order }, status: :created
         else
@@ -269,10 +297,11 @@ class PartsController < ApplicationController
       if @client_order
         ActiveRecord::Base.transaction do
           # Update the client order status
-          @client_order.update!(order_status: 'delivered')
+          delivery_date = params[:delivery_date] || Date.today
+          @client_order.update!(order_status: 'delivered', delivery_date: delivery_date)
           
-          # Update all associated positions to delivered
-          @client_order.client_order_positions.update_all(status: 'delivered')
+          # Update all associated positions to delivered and set their delivery date
+          @client_order.client_order_positions.update_all(status: 'delivered', delivery_date: delivery_date)
     
           render json: { success: "Client order #{@client_order.number} marked as delivered" }, status: :ok
         end
@@ -311,8 +340,13 @@ class PartsController < ApplicationController
                 status: 'production'
               )
 
-              part.update!(current_supplier_price: position[:price])
-    
+              contact = Contact.find_by(id: params[:contact_id])
+
+              if contact
+                supplier_order.contact = contact
+                supplier_order.save!
+              end
+
               # Associate each order position with the respective client orders
               client_order_ids.each do |client_order_id|
                 client_order = ClientOrder.find_by(id: client_order_id)
@@ -547,6 +581,8 @@ class PartsController < ApplicationController
       transfer_quantity = params[:quantity].to_i
       destination_type = params[:destination_type]
       destination_name = params[:destination_name]
+      delivery_slip = params[:delivery_slip]
+      transfer_date = params[:transfer_date] || Date.today
       
       return render json: { error: "Expedition position not found" }, status: :not_found unless expedition_position
     
@@ -597,6 +633,8 @@ class PartsController < ApplicationController
           create_expedition_position_history(
             expedition_position_id: expedition_position.id,
             part_id: params[:part_id],
+            transfer_date: transfer_date,
+            delivery_slip: delivery_slip,
             event_type: destination_type,
             location_name: destination_name
           )
@@ -634,6 +672,8 @@ class PartsController < ApplicationController
     
           create_expedition_position_history(
             expedition_position_id: expedition_position.id,
+            transfer_date: transfer_date,
+            delivery_slip: delivery_slip,
             part_id: params[:part_id],
             event_type: destination_type,
             location_name: destination_name
@@ -801,41 +841,20 @@ class PartsController < ApplicationController
     rescue StandardError => e
       render json: { error: e.message }, status: :internal_server_error
     end
-
+    
     def fetch_kpi_metrics
       # Get all client orders for the company
-      client_orders = ClientOrder.joins(client: :company)
-                              .where(clients: { company_id: params[:company_id] })
-
+      client_order_positions = ClientOrderPosition
+        .joins(client_order: { client: :company })
+        .where(clients: { company_id: params[:company_id] })
+        .where('client_order_positions.delivery_date >= ? AND client_order_positions.delivery_date <= ?', Date.today, Date.today + 30.days)
+    
       undelivered_expeditions = Expedition.where(status: 'undelivered').count
     
-      # Calculate total active orders (undelivered orders)
-      total_active_orders = client_orders.where(order_status: 'undelivered').count
-    
-      # Calculate on-time delivery rate
-      delivered_orders = client_orders.where(completed: true)
-      total_delivered = delivered_orders.count
-      
-      on_time_deliveries = ClientOrderPosition.joins(client_order: { client: :company })
-                                            .where(clients: { company_id: params[:company_id] })
-                                            .where('client_orders.completed = ? AND delivery_date >= client_orders.reel_delivery_time', 
-                                                  true)
-                                            .count
-    
-      # Calculate open supplier order positions count
-      open_supplier_positions = SupplierOrderPosition
-        .joins(supplier_order: { supplier: :company })
-        .where(suppliers: { company_id: params[:company_id] })
-        .where.not(status: 'completed')
-        .count
-    
-      on_time_delivery_rate = total_delivered > 0 ? 
-        ((on_time_deliveries.to_f / total_delivered) * 100).round(1) : 
-        0
+      total_active_orders = client_order_positions.where(status: 'undelivered').count
     
       render json: {
         totalActiveOrders: total_active_orders,
-        openSupplierPositions: open_supplier_positions,
         runningExpeditions: undelivered_expeditions
       }
     end
@@ -1111,6 +1130,37 @@ class PartsController < ApplicationController
       render json: transporters, status: :ok
     end
 
+    def fetch_company_addresses_and_client_adresses_by_name
+      client = Client.find_by(name: params[:client_name])
+
+      if client
+        logistic_places = @company.logistic_places.select(:id, :address).map do |lp|
+          { id: lp.id, address: lp.address, source: 'logistic' }
+        end
+    
+        sub_contractors = @company.sub_contractors.select(:id, :address).map do |sc|
+          { id: sc.id, address: sc.address, source: 'subcontractor' }
+        end
+
+        consignment_addresses = client.consignment_stocks.select(:id, :address).map do |stock|
+          { id: stock.id, address: stock.address, type: "consignment" }
+        end
+
+        standard_addresses = client.standard_stocks.select(:id, :address).map do |stock|
+          { id: stock.id, address: stock.address, type: "standard" }
+        end
+    
+        addresses = logistic_places + sub_contractors + consignment_addresses + standard_addresses
+    
+        render json: {
+          client: client,
+          addresses: addresses
+        }, status: :ok
+      else
+        render json: { error: "Client not found" }, status: :not_found
+      end
+    end
+
     def fetch_undelivered_expeditions
       expeditions = Expedition
         .joins(:supplier)
@@ -1243,12 +1293,75 @@ class PartsController < ApplicationController
       render json: @logistic_places
     end
 
+    def fetch_parts_by_supplier
+      parts = Part.joins("INNER JOIN parts_suppliers ON parts.id = parts_suppliers.part_id")
+                  .where("parts_suppliers.supplier_id = ?", @supplier.id)
+  
+      render json: parts, status: :ok
+    rescue ActiveRecord::RecordNotFound
+      render json: { error: "Supplier not found" }, status: :not_found
+    rescue => e
+      render json: { error: "Internal Server Error: #{e.message}" }, status: :internal_server_error
+    end
+
+    def fetch_client_orders_by_company
+      # Fetch client orders with associated clients and positions
+      client_order_positions = @company.client_orders.includes(client: {}, client_order_positions: [:part])
+                                          .flat_map do |order|
+        order.client_order_positions.map do |position|
+          {
+            id: position.id,
+            quantity: position.quantity,
+            price: position.price,
+            delivery_date: position.delivery_date,
+            client_name: order.client.name,
+            order_number: order.number,
+            reference_and_designation: "#{position.part.reference} #{position.part.designation}"
+          }
+        end
+      end
+    
+      render json: client_order_positions, status: :ok
+    end
+
+    def fetch_client_by_name
+      client = Client.find_by(name: params[:name])
+
+      render json: client, status: :ok
+    end
+
+    def fetch_contacts_by_client
+      contacts = @client.contacts
+
+      render json: contacts, status: :ok
+    end
+
+    def fetch_supplier_orders_by_company
+      supplier_orders = @company.supplier_orders.includes(:supplier, :supplier_order_positions)
+    
+      supplier_orders_array = supplier_orders.map do |order|
+        order.supplier_order_positions.map do |position|
+          {
+            id: position.id,
+            quantity: position.quantity,
+            price: position.price,
+            delivery_date: position.delivery_date,
+            supplier_name: order.supplier.name,
+            order_number: order.number,
+            reference_and_designation: "#{position.part.reference} #{position.part.designation}"
+          }
+        end
+      end.flatten
+    
+      render json: supplier_orders_array, status: :ok
+    end
+
     def part_related_data
-      @part_searched = Part.includes(:supplier_orders, :client_orders, :sub_contractors, :logistic_places)
+      @part_searched = Part.includes(:suppliers, :client_orders, :sub_contractors, :logistic_places)
                           .find_by(id: params[:part_id])
     
       if @part_searched
-        suppliers = @part_searched.supplier_orders.map(&:supplier).uniq
+        suppliers = @part_searched.suppliers.uniq
         client = @part_searched.client
         sub_contractors = @part_searched.sub_contractors.uniq
     
@@ -1256,7 +1369,7 @@ class PartsController < ApplicationController
         current_client_price = @part_searched.current_client_price
     
         render json: @part_searched.as_json.merge(
-          suppliers: suppliers, 
+          suppliers: suppliers.as_json(only: [:name]),
           client: client, 
           sub_contractors: sub_contractors, 
           supplier_price: current_supplier_price, 
@@ -1306,11 +1419,6 @@ class PartsController < ApplicationController
     def logistic_places_index
       @logistic_places = LogisticPlace.where(company_id: params[:company_id])
       render json: @logistic_places
-    end
-  
-    def parts_by_supplier
-      @parts = @supplier.parts
-      render json: @parts, status: :ok
     end
   
     #SPECIFIC INDICES
@@ -1400,6 +1508,8 @@ class PartsController < ApplicationController
     def create_expedition_position_history(**params)
       ExpeditionPositionHistory.create!(
         expedition_position_id: params[:expedition_position_id],
+        transfer_date: params[:transfer_date],
+        delivery_slip: params[:delivery_slip],
         part_id: params[:part_id],
         event_type: params[:event_type],
         location_name: params[:location_name],
@@ -1456,13 +1566,11 @@ class PartsController < ApplicationController
     end
 
     def client_params
-      params.require(:client).permit(
-        :name, :address
-      )
+      params.require(:client).permit(:name, :address)
     end
 
     def supplier_params
-      params.require(:supplier).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
+      params.require(:supplier).permit(:name, :address)
     end
 
     def part_params 
@@ -1476,11 +1584,11 @@ class PartsController < ApplicationController
     end
 
     def subcontractor_params
-      params.require(:subcontractor).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
+      params.require(:subcontractor).permit(:name, :address, :knowledge)
     end
 
     def logistic_place_params
-      params.require(:logistic_place).permit(:name, :address, :knowledge, contacts: [:email, :first_name, :last_name, :role])
+      params.require(:logistic_place).permit(:name, :address, :knowledge)
     end
 
     def supplier_order_params
@@ -1523,6 +1631,10 @@ class PartsController < ApplicationController
       @company = Company.find_by(id: params[:company_id])
     end
 
+    def set_part_by_company
+      @part = Part.find_by(id: params[:part_id], company_id: params[:company_id])
+    end
+
     def set_part
       @part_searched = Part.includes(:supplier_orders, :client_orders, :sub_contractors, :logistic_places, :supplier_order_indices, :supplier_order_positions)
       .find_by(id: params[:part_id])
@@ -1541,7 +1653,7 @@ class PartsController < ApplicationController
     end
   
     def set_supplier
-      @supplier = Supplier.find(params[:supplier_id])
+      @supplier = Supplier.find_by(id: params[:supplier_id])
     end
   
     # Set the client

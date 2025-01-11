@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -45,11 +45,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
     t.integer "quantity"
     t.string "order_status", default: "undelivered", null: false
     t.datetime "order_date"
-    t.datetime "order_delivery_time"
-    t.datetime "estimated_arrival_time"
-    t.datetime "estimated_departure_time"
-    t.datetime "reel_delivery_time"
-    t.datetime "reel_arrival_time"
     t.string "number"
     t.string "batch"
     t.datetime "created_at", null: false
@@ -59,7 +54,11 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
     t.boolean "invoice_issued", default: false
     t.boolean "invoice_paid", default: false
     t.boolean "completed", default: false
+    t.bigint "contact_id"
+    t.date "delivery_date"
+    t.date "order_delivery_time"
     t.index ["client_id"], name: "index_client_orders_on_client_id"
+    t.index ["contact_id"], name: "index_client_orders_on_contact_id"
   end
 
   create_table "client_orders_parts", id: false, force: :cascade do |t|
@@ -209,6 +208,36 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
     t.index ["contactable_type", "contactable_id"], name: "index_contacts_on_contactable_type_and_contactable_id"
   end
 
+  create_table "delivery_slips", force: :cascade do |t|
+    t.bigint "client_order_id"
+    t.bigint "part_id"
+    t.bigint "company_id"
+    t.bigint "expedition_position_id"
+    t.bigint "contact_id"
+    t.date "transfer_date", null: false
+    t.boolean "is_partial", default: false
+    t.string "number", null: false
+    t.text "packaging_informations"
+    t.text "transport_conditions"
+    t.decimal "brut_weight", precision: 10, scale: 2
+    t.decimal "net_weight", precision: 10, scale: 2
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "departure_address"
+    t.string "arrival_address"
+    t.bigint "logistic_place_id"
+    t.bigint "sub_contractor_id"
+    t.bigint "client_id"
+    t.index ["client_id"], name: "index_delivery_slips_on_client_id"
+    t.index ["client_order_id"], name: "index_delivery_slips_on_client_order_id"
+    t.index ["company_id"], name: "index_delivery_slips_on_company_id"
+    t.index ["contact_id"], name: "index_delivery_slips_on_contact_id"
+    t.index ["expedition_position_id"], name: "index_delivery_slips_on_expedition_position_id"
+    t.index ["logistic_place_id"], name: "index_delivery_slips_on_logistic_place_id"
+    t.index ["part_id"], name: "index_delivery_slips_on_part_id"
+    t.index ["sub_contractor_id"], name: "index_delivery_slips_on_sub_contractor_id"
+  end
+
   create_table "expedition_position_histories", force: :cascade do |t|
     t.bigint "expedition_position_id", null: false
     t.bigint "part_id", null: false
@@ -217,6 +246,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
     t.string "description"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "delivery_slip"
+    t.date "transfer_date"
     t.index ["expedition_position_id"], name: "index_expedition_position_histories_on_expedition_position_id"
     t.index ["part_id"], name: "index_expedition_position_histories_on_part_id"
   end
@@ -462,6 +493,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
     t.boolean "completed"
     t.integer "real_quantity"
     t.string "quantity_status"
+    t.bigint "contact_id"
+    t.index ["contact_id"], name: "index_supplier_orders_on_contact_id"
     t.index ["supplier_id"], name: "index_supplier_orders_on_supplier_id"
   end
 
@@ -506,6 +539,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
   add_foreign_key "client_order_positions", "client_orders"
   add_foreign_key "client_order_positions", "parts"
   add_foreign_key "client_orders", "clients"
+  add_foreign_key "client_orders", "contacts"
   add_foreign_key "client_positions", "clients"
   add_foreign_key "client_positions", "expeditions"
   add_foreign_key "client_positions", "parts"
@@ -517,6 +551,14 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
   add_foreign_key "consignment_stock_parts", "consignment_stocks"
   add_foreign_key "consignment_stock_parts", "parts"
   add_foreign_key "consignment_stocks", "clients"
+  add_foreign_key "delivery_slips", "client_orders"
+  add_foreign_key "delivery_slips", "clients"
+  add_foreign_key "delivery_slips", "companies"
+  add_foreign_key "delivery_slips", "contacts"
+  add_foreign_key "delivery_slips", "expedition_positions"
+  add_foreign_key "delivery_slips", "logistic_places"
+  add_foreign_key "delivery_slips", "parts"
+  add_foreign_key "delivery_slips", "sub_contractors"
   add_foreign_key "expedition_position_histories", "expedition_positions"
   add_foreign_key "expedition_position_histories", "parts"
   add_foreign_key "expedition_positions", "expeditions"
@@ -536,6 +578,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_02_154858) do
   add_foreign_key "supplier_order_indices", "supplier_order_positions"
   add_foreign_key "supplier_order_positions", "parts"
   add_foreign_key "supplier_order_positions", "supplier_orders"
+  add_foreign_key "supplier_orders", "contacts"
   add_foreign_key "supplier_orders", "suppliers"
   add_foreign_key "suppliers", "companies"
   add_foreign_key "transporters", "companies"

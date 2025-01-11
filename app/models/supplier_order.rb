@@ -1,5 +1,6 @@
 class SupplierOrder < ApplicationRecord
   belongs_to :supplier
+  belongs_to :contact, optional: true
   
   has_and_belongs_to_many :expeditions
   has_and_belongs_to_many :parts, join_table: :parts_supplier_orders
