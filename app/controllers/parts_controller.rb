@@ -437,7 +437,7 @@ class PartsController < ApplicationController
         # Update expedition status to delivered
         expedition = Expedition.find_by(id: params[:expedition_id])
         raise ActiveRecord::RecordNotFound, "Expedition not found" unless expedition
-    
+
         supplier_order_indices_ids.each_with_index do |supplier_order_index_id, index|
           supplier_order_index = SupplierOrderIndex.find_by(id: supplier_order_index_id)
           raise ActiveRecord::RecordNotFound, "SupplierOrderIndex not found" unless supplier_order_index
@@ -841,7 +841,7 @@ class PartsController < ApplicationController
     rescue StandardError => e
       render json: { error: e.message }, status: :internal_server_error
     end
-    
+
     def fetch_kpi_metrics
       # Get all client orders for the company
       client_order_positions = ClientOrderPosition
