@@ -101,7 +101,7 @@ class PdfGeneratorController < ApplicationController
       pdf.move_down 30
     
       # Table for Expedition Position
-      pdf.text "Contenu de l'expédition :", size: 12, style: :italic, align: :left
+      pdf.text "Expedition content :", size: 12, style: :italic, align: :left
       pdf.move_down 20
       table_data = [
         ["Reference", "Designation", "Quantity"],

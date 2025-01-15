@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -191,6 +191,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "current_quantity"
+    t.string "name"
     t.index ["client_id"], name: "index_consignment_stocks_on_client_id"
   end
 
@@ -239,7 +240,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
   end
 
   create_table "expedition_position_histories", force: :cascade do |t|
-    t.bigint "expedition_position_id", null: false
+    t.bigint "expedition_position_id"
     t.bigint "part_id", null: false
     t.string "event_type", null: false
     t.string "location_name", null: false
@@ -248,6 +249,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
     t.datetime "updated_at", null: false
     t.string "delivery_slip"
     t.date "transfer_date"
+    t.bigint "client_position_id"
+    t.index ["client_position_id"], name: "index_expedition_position_histories_on_client_position_id"
     t.index ["expedition_position_id"], name: "index_expedition_position_histories_on_expedition_position_id"
     t.index ["part_id"], name: "index_expedition_position_histories_on_part_id"
   end
@@ -392,6 +395,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "current_quantity"
+    t.string "name"
     t.index ["client_id"], name: "index_standard_stocks_on_client_id"
   end
 
@@ -559,6 +563,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_11_113319) do
   add_foreign_key "delivery_slips", "logistic_places"
   add_foreign_key "delivery_slips", "parts"
   add_foreign_key "delivery_slips", "sub_contractors"
+  add_foreign_key "expedition_position_histories", "client_positions"
   add_foreign_key "expedition_position_histories", "expedition_positions"
   add_foreign_key "expedition_position_histories", "parts"
   add_foreign_key "expedition_positions", "expeditions"

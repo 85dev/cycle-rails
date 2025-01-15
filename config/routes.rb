@@ -35,8 +35,8 @@ Rails.application.routes.draw do
   get 'companies/:company_id/company_uncompleted_supplier_orders_positions', to: 'parts#fetch_uncompleted_supplier_orders_positions_by_company'
   get 'companies/:company_id/undelivered_expeditions', to: 'parts#fetch_undelivered_expeditions'
   get 'companies/:company_id/delivered_expeditions', to: 'parts#fetch_delivered_expeditions'
-  get 'companies/:company_id/parts/:part_id/expedition_position_by_sub_contractor', to: 'parts#fetch_expedition_position_parts_by_sub_contractor'
-  get 'companies/:company_id/parts/:part_id/expedition_position_by_logistic_place', to: 'parts#fetch_expedition_position_parts_by_logistic_place'
+  get 'companies/:company_id/parts/:part_id/expedition_position_by_sub_contractor', to: 'parts#fetch_expedition_position_by_sub_contractor'
+  get 'companies/:company_id/parts/:part_id/expedition_position_by_logistic_place', to: 'parts#fetch_expedition_position_by_logistic_place'
   get 'companies/:company_id/clients_by_part_ids', to: 'parts#clients_by_part_ids'
   get 'companies/:company_id/parts/:part_id/unsorted_client_positions', to: 'parts#fetch_unsorted_client_positions'
   get 'companies/:company_id/clients/:client_id/fetch_standard_stocks_by_client', to: 'parts#fetch_standard_stocks_by_client'
@@ -48,6 +48,7 @@ Rails.application.routes.draw do
   get 'companies/:company_id/client_positions/:client_position_id/position_history', to: 'parts#fetch_position_history'
   get 'companies/:company_id/kpi_metrics', to: 'parts#fetch_kpi_metrics'
   get 'companies/:company_id/clients/:client_id/consignment_stocks/:consignment_stock_id/parts_by_client_and_consignment_stock', to: 'parts#fetch_parts_by_client_and_consignment_stock'
+  get 'companies/:company_id/parts/:part_id/calculate_part_stocks', to: 'parts#fetch_calculate_part_stocks'
   
   # Route DELETE for deleting orders
   delete 'companies/:company_id/client_orders/:client_order_id', to: 'parts#delete_client_order'
@@ -68,6 +69,7 @@ Rails.application.routes.draw do
   post 'companies/:company_id/expeditions/:expedition_id/dispatch_expedition', to: 'parts#dispatch_expedition'
   post 'companies/:company_id/clients/:client_id/sort_client_positions', to: 'parts#sort_client_positions'
   post 'companies/:company_id/expedition_positions/:expedition_position_id/transfer_position', to: 'parts#transfer_position'
+  post 'companies/:company_id/client_positions/:client_position_id/transfer_position_from_client',to: 'parts#transfer_position_from_client'
   post 'companies/:company_id/consignment_stocks/:consignment_stock_id/create_consignment_consumption', to: 'parts#create_consignment_consumption'
   get 'companies/:company_id/client_orders/:client_order_id/complete_client_order', to: 'parts#complete_client_order'
 
