@@ -522,6 +522,7 @@ class PartsController < ApplicationController
               position.logistic_places << logistic_place
               create_expedition_position_history(
                 expedition_position_id: position.id,
+                transfer_date: transfer_date || Date.today,
                 part_id: part.id,
                 event_type: 'logistic_place',
                 location_name: logistic_place_name
@@ -533,6 +534,7 @@ class PartsController < ApplicationController
               position.sub_contractors << subcontractor
               create_expedition_position_history(
                 expedition_position_id: position.id,
+                transfer_date: transfer_date || Date.today,
                 part_id: part.id,
                 event_type: 'subcontractor',
                 location_name: subcontractor_name
@@ -939,15 +941,15 @@ class PartsController < ApplicationController
             part_id: @part_searched.id
           )
           .select(:id, :quantity, :price, :created_at,
-                 'parts.reference AS part_reference',
-            'parts.designation AS part_designation',
-            'consignment_consumptions.begin_date AS begin_date',
-            'consignment_consumptions.end_date AS end_date')
+                  'parts.reference AS part_reference',
+                  'parts.designation AS part_designation',
+                  'consignment_consumptions.begin_date AS begin_date',
+                  'consignment_consumptions.end_date AS end_date')
 
         {
           id: stock.id,
           address: stock.address,
-          contact_name: stock.contact_name,
+          name: stock.name,
           current_quantity: stock_part&.current_quantity || 0,
           consumption_positions: consumption_positions.map do |consumption|
             {
@@ -1164,16 +1166,16 @@ class PartsController < ApplicationController
     
       # Build the result
       result = {
-        part_reference: part_reference,
         current_stock: {
           consignment_stock: consignment_stock,
           standard_stock: standard_stock,
           subcontractor_stock: subcontractor_stock,
-          logistic_place_stock: logistic_place_stock
+          logistic_place_stock: logistic_place_stock,
+          total: consignment_stock + standard_stock + subcontractor_stock + logistic_place_stock
         },
         ordered_stock: {
           expeditions: ordered_expeditions,
-          supplier_orders: ordered_supplier_orders
+          supplier_orders: ordered_supplier_orders,
         },
         reserved_stock: reserved_client_orders,
         total_current_stock: total_current_stock,
