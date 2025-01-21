@@ -1,9 +1,11 @@
 class PdfGeneratorController < ApplicationController
     def create_delivery_slip
       company = Company.find_by(id: params[:company_id])
-      expedition_position = ExpeditionPosition.find_by(id: params[:expedition_position_id])
       client_order = ClientOrder.find_by(id: params[:client_order_id])
       contact = Contact.find_by(id: params[:contact_id])
+
+      expedition_position_ids = params[:expedition_position_ids]
+      expedition_positions = ExpeditionPosition.where(id: expedition_position_ids)
 
       transfer_quantity = params[:quantity].to_i
       delivery_slip_number = params[:delivery_slip]
@@ -17,8 +19,6 @@ class PdfGeneratorController < ApplicationController
 
       # Create DeliverySlip model
       delivery_slip = DeliverySlip.create!(
-        expedition_position: expedition_position,
-        part: expedition_position.part,
         company: company,
         contact: contact,
         client_order: client_order,
@@ -31,6 +31,8 @@ class PdfGeneratorController < ApplicationController
         departure_address: departure_address,
         arrival_address: arrival_address
       )
+
+      delivery_slip.expedition_positions << expedition_positions if delivery_slip
   
       render json: { delivery_slip_id: delivery_slip.id }, status: :ok
     end

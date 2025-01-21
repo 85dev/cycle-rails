@@ -9,6 +9,7 @@ class Part < ApplicationRecord
   has_many :part_histories, dependent: :destroy
   has_many :consignment_stock_parts
   has_many :expedition_position_histories
+  has_many :expedition_positions
 
   has_and_belongs_to_many :suppliers
   has_and_belongs_to_many :supplier_orders
@@ -16,6 +17,5 @@ class Part < ApplicationRecord
   has_and_belongs_to_many :sub_contractors
   has_and_belongs_to_many :logistic_places
 
-  validates :reference, uniqueness: true, presence: true
-  validates :designation, uniqueness: true, presence: true
+  validates :reference, uniqueness: { scope: :designation, message: 'and designation combination must be unique' }
 end

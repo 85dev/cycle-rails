@@ -1,5 +1,4 @@
 class Expedition < ApplicationRecord
-    belongs_to :supplier
     belongs_to :transporter
 
     has_many :expedition_positions, dependent: :destroy

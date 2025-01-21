@@ -26,9 +26,9 @@ Rails.application.routes.draw do
   get 'companies/:company_id/suppliers/:supplier_id/parts_by_supplier', to: 'parts#fetch_parts_by_supplier'
   get 'companies/:company_id/expeditions/:expedition_id/supplier_orders', to: 'parts#fetch_expedition_orders'
   get 'companies/:company_id/parts/:part_id/supplier_orders', to: 'parts#fetch_supplier_orders_by_part'
-  get 'companies/:company_id/parts/:part_id/client_orders', to: 'parts#fetch_client_orders_by_part'
+  get 'companies/:company_id/parts/:part_id/client_order_positions', to: 'parts#fetch_client_order_positions_by_part'
   get 'companies/:company_id/future_company_client_orders', to: 'parts#fetch_future_company_client_orders'
-  get 'companies/:company_id/parts/:part_id/supplier_order_indexes_by_part', to: 'parts#fetch_expeditions_supplier_order_indices_by_part'
+  get 'companies/:company_id/parts/:part_id/supplier_order_indices_by_part', to: 'parts#fetch_expeditions_supplier_order_indices_by_part'
   get 'companies/:company_id/parts/:part_id/sub_contractors', to: 'parts#fetch_sub_contractors_by_part'
   get 'companies/:company_id/parts/:part_id/logistic_places', to: 'parts#fetch_logistic_places_by_part'
   get 'companies/:company_id/parts/:part_id/supplier_orders_positions', to: 'parts#fetch_supplier_orders_positions_by_company_and_part'
@@ -49,6 +49,9 @@ Rails.application.routes.draw do
   get 'companies/:company_id/kpi_metrics', to: 'parts#fetch_kpi_metrics'
   get 'companies/:company_id/clients/:client_id/consignment_stocks/:consignment_stock_id/parts_by_client_and_consignment_stock', to: 'parts#fetch_parts_by_client_and_consignment_stock'
   get 'companies/:company_id/parts/:part_id/calculate_part_stocks', to: 'parts#fetch_calculate_part_stocks'
+  get 'companies/:company_id/delivery_slips_by_company', to: 'parts#fetch_delivery_slips_by_company'
+  get 'companies/:company_id/clients/:client_id/client_orders_by_client', to: 'parts#fetch_client_orders_by_client'
+  get 'companies/:company_id/clients/:client_id/expedition_positions_by_client', to: 'parts#fetch_expedition_positions_by_client'
   
   # Route DELETE for deleting orders
   delete 'companies/:company_id/client_orders/:client_order_id', to: 'parts#delete_client_order'
@@ -71,8 +74,9 @@ Rails.application.routes.draw do
   post 'companies/:company_id/expedition_positions/:expedition_position_id/transfer_position', to: 'parts#transfer_position'
   post 'companies/:company_id/client_positions/:client_position_id/transfer_position_from_client',to: 'parts#transfer_position_from_client'
   post 'companies/:company_id/consignment_stocks/:consignment_stock_id/create_consignment_consumption', to: 'parts#create_consignment_consumption'
-  get 'companies/:company_id/client_orders/:client_order_id/complete_client_order', to: 'parts#complete_client_order'
-
+  patch 'companies/:company_id/client_order_positions/:position_id/complete_client_order', to: 'parts#complete_client_order_position'
+  patch 'companies/:company_id/supplier_order_positions/:position_id/complete_supplier_order', to: 'parts#complete_supplier_order_position'
+  
   # Routes GET for data index by user
   get 'companies/:company_id/clients', to: 'parts#client_index'
   get 'companies/:company_id/suppliers', to: 'parts#supplier_index'

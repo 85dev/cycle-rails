@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -35,6 +35,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.string "status"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "real_delivery_time"
     t.index ["client_order_id"], name: "index_client_order_positions_on_client_order_id"
     t.index ["part_id"], name: "index_client_order_positions_on_part_id"
   end
@@ -213,7 +214,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.bigint "client_order_id"
     t.bigint "part_id"
     t.bigint "company_id"
-    t.bigint "expedition_position_id"
     t.bigint "contact_id"
     t.date "transfer_date", null: false
     t.boolean "is_partial", default: false
@@ -233,10 +233,16 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.index ["client_order_id"], name: "index_delivery_slips_on_client_order_id"
     t.index ["company_id"], name: "index_delivery_slips_on_company_id"
     t.index ["contact_id"], name: "index_delivery_slips_on_contact_id"
-    t.index ["expedition_position_id"], name: "index_delivery_slips_on_expedition_position_id"
     t.index ["logistic_place_id"], name: "index_delivery_slips_on_logistic_place_id"
     t.index ["part_id"], name: "index_delivery_slips_on_part_id"
     t.index ["sub_contractor_id"], name: "index_delivery_slips_on_sub_contractor_id"
+  end
+
+  create_table "delivery_slips_expedition_positions", id: false, force: :cascade do |t|
+    t.bigint "expedition_position_id", null: false
+    t.bigint "delivery_slip_id", null: false
+    t.index ["delivery_slip_id", "expedition_position_id"], name: "idx_on_delivery_slip_id_expedition_position_id_da8f484400"
+    t.index ["expedition_position_id", "delivery_slip_id"], name: "idx_on_expedition_position_id_delivery_slip_id_886d62b722"
   end
 
   create_table "expedition_position_histories", force: :cascade do |t|
@@ -291,12 +297,11 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.string "transporter"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.bigint "supplier_id", null: false
     t.string "number"
     t.string "status"
     t.decimal "price"
     t.bigint "transporter_id", null: false
-    t.index ["supplier_id"], name: "index_expeditions_on_supplier_id"
+    t.datetime "estimated_arrival_time"
     t.index ["transporter_id"], name: "index_expeditions_on_transporter_id"
   end
 
@@ -368,6 +373,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.bigint "company_id", null: false
     t.index ["client_id"], name: "index_parts_on_client_id"
     t.index ["company_id"], name: "index_parts_on_company_id"
+    t.index ["reference", "designation"], name: "index_parts_on_reference_and_designation", unique: true
   end
 
   create_table "parts_sub_contractors", id: false, force: :cascade do |t|
@@ -466,6 +472,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.string "status"
     t.integer "original_quantity", default: 0, null: false
     t.string "quantity_status"
+    t.boolean "delivered", default: false, null: false
+    t.date "real_delivery_date"
     t.index ["part_id"], name: "index_supplier_order_positions_on_part_id"
     t.index ["supplier_order_id"], name: "index_supplier_order_positions_on_supplier_order_id"
   end
@@ -498,6 +506,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
     t.integer "real_quantity"
     t.string "quantity_status"
     t.bigint "contact_id"
+    t.boolean "fully_delivered", default: false, null: false
     t.index ["contact_id"], name: "index_supplier_orders_on_contact_id"
     t.index ["supplier_id"], name: "index_supplier_orders_on_supplier_id"
   end
@@ -559,7 +568,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
   add_foreign_key "delivery_slips", "clients"
   add_foreign_key "delivery_slips", "companies"
   add_foreign_key "delivery_slips", "contacts"
-  add_foreign_key "delivery_slips", "expedition_positions"
   add_foreign_key "delivery_slips", "logistic_places"
   add_foreign_key "delivery_slips", "parts"
   add_foreign_key "delivery_slips", "sub_contractors"
@@ -569,7 +577,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_15_132036) do
   add_foreign_key "expedition_positions", "expeditions"
   add_foreign_key "expedition_positions", "parts"
   add_foreign_key "expedition_positions", "supplier_order_indices"
-  add_foreign_key "expeditions", "suppliers"
   add_foreign_key "expeditions", "transporters"
   add_foreign_key "logistic_places", "companies"
   add_foreign_key "part_histories", "parts"

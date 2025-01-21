@@ -7,7 +7,7 @@ ActiveRecord::Base.connection.transaction do
   ActiveRecord::Base.connection.execute("SET session_replication_role = 'replica';")
 
   # Get all table names except `users`, `schema_migrations`, and `ar_internal_metadata`
-  tables = ActiveRecord::Base.connection.tables - ['users', 'schema_migrations', 'ar_internal_metadata']
+  tables = ActiveRecord::Base.connection.tables - ['schema_migrations', 'ar_internal_metadata']
 
   # Truncate each table to delete all data
   tables.each do |table|
@@ -19,4 +19,4 @@ ActiveRecord::Base.connection.transaction do
   ActiveRecord::Base.connection.execute("SET session_replication_role = 'origin';")
 end
 
-puts "Database cleanup complete. All tables except 'users' have been truncated."
+puts "Database cleanup complete. All tables except the ones you choose have been truncated."
