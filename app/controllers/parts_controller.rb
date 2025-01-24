@@ -1050,12 +1050,20 @@ class PartsController < ApplicationController
       .where(clients: { company_id: params[:company_id] })
       .where('client_order_positions.delivery_date >= ? AND client_order_positions.delivery_date <= ?', Date.today, Date.today + 180.days)
 
+      delayed_order_positions = ClientOrderPosition
+      .joins(client_order: { client: :company })
+      .where(clients: { company_id: params[:company_id] })
+      .where('client_order_positions.delivery_date < ?', Date.today)
+      .where(status: 'undelivered')
+
       undelivered_expeditions = Expedition.where(status: 'undelivered').count
     
       urgent_orders = urgent_client_order_positions.where(status: 'undelivered').count
       future_orders = future_client_order_positions.where(status: 'undelivered').count
+      delayed_orders = delayed_order_positions.where(status: 'undelivered').count
     
       render json: {
+        delayedOrders: delayed_orders,
         totalActiveOrders: urgent_orders,
         futureOrders: future_orders,
         runningExpeditions: undelivered_expeditions
@@ -1577,43 +1585,104 @@ class PartsController < ApplicationController
     end
 
     def fetch_client_orders_by_client
-      client_orders = @client.client_orders.includes(client_order_positions: [:part])
-                                  .flat_map do |order|
-        order.client_order_positions.map do |position|
-          {
-            id: position.id,
-            quantity: position.quantity,
-            price: position.price,
-            delivery_date: position.delivery_date,
-            order_number: order.number,
-            reference_and_designation: "#{position.part.reference} #{position.part.designation}"
-          }
-        end.flatten
+      client_orders = @client.client_orders.map do |order|
+        {
+          id: order.id,
+          order_number: order.number,
+          total_quantity: order.client_order_positions.sum(&:quantity),
+          total_price: order.client_order_positions.sum { |pos| pos.quantity * pos.price },
+          delivery_date: order.delivery_date
+        }
       end
     
-        render json: client_orders, status: :ok
+      render json: client_orders, status: :ok
     end
 
     def fetch_expedition_positions_by_client
       expedition_positions = ExpeditionPosition
-      .joins('LEFT JOIN parts ON parts.id = expedition_positions.part_id')
-      .joins('LEFT JOIN expeditions ON expeditions.id = expedition_positions.expedition_id')
-      .where(
-        'parts.client_id = :client_id',
-        client_id: @client.id
-      )
-      .select(
-        'expedition_positions.id AS id',
-        'parts.reference AS part_reference',
-        'parts.designation AS part_designation',
-        'expedition_positions.quantity AS quantity',
-        'expedition_positions.sorted AS sorted',
-        'expeditions.real_departure_time AS delivery_date',
-        'sub_contractors.name AS subcontractor_name',
-        'logistic_places.name AS logistic_place_name'
-      )
-  
-      render json: expedition_positions, status: :ok
+        .joins(part: :client)
+        .joins('LEFT JOIN expedition_positions_sub_contractors ON expedition_positions.id = expedition_positions_sub_contractors.expedition_position_id')
+        .joins('LEFT JOIN sub_contractors ON sub_contractors.id = expedition_positions_sub_contractors.sub_contractor_id')
+        .joins('LEFT JOIN expedition_positions_logistic_places ON expedition_positions.id = expedition_positions_logistic_places.expedition_position_id')
+        .joins('LEFT JOIN logistic_places ON logistic_places.id = expedition_positions_logistic_places.logistic_place_id')
+        .joins(:expedition)
+        .where(parts: { client_id: @client.id })
+        .select(
+          'DISTINCT expedition_positions.id AS id',
+          'parts.reference AS part_reference',
+          'parts.designation AS part_designation',
+          'expedition_positions.quantity AS quantity',
+          'expedition_positions.sorted AS sorted',
+          'expeditions.number AS expedition_number',
+          'expeditions.real_departure_time AS delivery_date',
+          'sub_contractors.name AS subcontractor_name',
+          'sub_contractors.id AS subcontractor_id',
+          'logistic_places.name AS logistic_place_name',
+          'logistic_places.id AS logistic_place_id'
+        )
+    
+      subcontractor_positions = expedition_positions.group_by(&:subcontractor_id)    
+      logistic_place_positions = expedition_positions.group_by(&:logistic_place_id)
+      unassociated_positions = expedition_positions.select do |pos|
+        pos.subcontractor_id.nil? && pos.logistic_place_id.nil?
+      end
+    
+      # Prepare subcontractor result, filtering out nil values
+      subcontractor_result = subcontractor_positions.map do |subcontractor_id, positions|
+        next if subcontractor_id.nil?
+    
+        {
+          subcontractor_id: subcontractor_id,
+          subcontractor_name: positions.first.subcontractor_name,
+          positions: positions.map do |pos|
+            {
+              expedition_position_id: pos.id,
+              part_reference: pos.part_reference,
+              part_designation: pos.part_designation,
+              quantity: pos.quantity,
+              expedition_number: pos.expedition_number,
+              delivery_date: pos.delivery_date
+            }
+          end
+          }
+      end.compact # Removes nil from the result
+    
+      # Prepare logistic place result, filtering out nil values
+      logistic_place_result = logistic_place_positions.map do |logistic_place_id, positions|
+        next if logistic_place_id.nil?
+    
+        {
+          logistic_place_id: logistic_place_id,
+          logistic_place_name: positions.first.logistic_place_name,
+          positions: positions.map do |pos|
+            {
+              expedition_position_id: pos.id,
+              part_reference: pos.part_reference,
+              part_designation: pos.part_designation,
+              quantity: pos.quantity,
+              expedition_number: pos.expedition_number,
+              delivery_date: pos.delivery_date
+            }
+          end
+          }
+      end.compact
+    
+      unassociated_result = unassociated_positions.map do |pos|
+        {
+          expedition_position_id: pos.id,
+          part_reference: pos.part_reference,
+          part_designation: pos.part_designation,
+          quantity: pos.quantity,
+          expedition_number: pos.expedition_number,
+          delivery_date: pos.delivery_date
+        }
+      end
+
+      render json: {
+        subcontractors: subcontractor_result,
+        logistic_places: logistic_place_result,
+        unassociated_positions: unassociated_result
+      }, status: :ok
     end
 
     def fetch_sub_contractors_by_part

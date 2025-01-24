@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_21_083658) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -60,6 +60,13 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
     t.date "order_delivery_time"
     t.index ["client_id"], name: "index_client_orders_on_client_id"
     t.index ["contact_id"], name: "index_client_orders_on_contact_id"
+  end
+
+  create_table "client_orders_delivery_slips", id: false, force: :cascade do |t|
+    t.bigint "client_order_id", null: false
+    t.bigint "delivery_slip_id", null: false
+    t.index ["client_order_id", "delivery_slip_id"], name: "idx_on_client_order_id_delivery_slip_id_b9d8e771a1"
+    t.index ["delivery_slip_id", "client_order_id"], name: "idx_on_delivery_slip_id_client_order_id_e646b73e98"
   end
 
   create_table "client_orders_parts", id: false, force: :cascade do |t|
@@ -211,7 +218,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
   end
 
   create_table "delivery_slips", force: :cascade do |t|
-    t.bigint "client_order_id"
     t.bigint "part_id"
     t.bigint "company_id"
     t.bigint "contact_id"
@@ -230,7 +236,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
     t.bigint "sub_contractor_id"
     t.bigint "client_id"
     t.index ["client_id"], name: "index_delivery_slips_on_client_id"
-    t.index ["client_order_id"], name: "index_delivery_slips_on_client_order_id"
     t.index ["company_id"], name: "index_delivery_slips_on_company_id"
     t.index ["contact_id"], name: "index_delivery_slips_on_contact_id"
     t.index ["logistic_place_id"], name: "index_delivery_slips_on_logistic_place_id"
@@ -564,7 +569,6 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_20_215956) do
   add_foreign_key "consignment_stock_parts", "consignment_stocks"
   add_foreign_key "consignment_stock_parts", "parts"
   add_foreign_key "consignment_stocks", "clients"
-  add_foreign_key "delivery_slips", "client_orders"
   add_foreign_key "delivery_slips", "clients"
   add_foreign_key "delivery_slips", "companies"
   add_foreign_key "delivery_slips", "contacts"

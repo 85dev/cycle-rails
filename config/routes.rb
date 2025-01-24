@@ -89,7 +89,7 @@ Rails.application.routes.draw do
 
 
   # Routes GET/POST for generating, updating and fetching PDF and models dedicated to PDF generation
-  post 'companies/:company_id/expedition_positions/:expedition_position_id/delivery_slip', to: 'pdf_generator#create_delivery_slip'
+  post 'companies/:company_id/delivery_slip', to: 'pdf_generator#create_delivery_slip'
   get 'pdf_generator/:delivery_slip_id/generate_pdf', to: 'pdf_generator#generate_delivery_slip_pdf'
   get 'pdf_generator/:client_id/last_delivery_slip', to: 'pdf_generator#fetch_last_delivery_slip_by_client'
 

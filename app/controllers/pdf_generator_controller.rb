@@ -4,12 +4,13 @@ class PdfGeneratorController < ApplicationController
       client_order = ClientOrder.find_by(id: params[:client_order_id])
       contact = Contact.find_by(id: params[:contact_id])
 
+      # For multiple associations purposes
       expedition_position_ids = params[:expedition_position_ids]
-      expedition_positions = ExpeditionPosition.where(id: expedition_position_ids)
+      client_order_ids = params[:client_order_ids]
 
-      transfer_quantity = params[:quantity].to_i
+      quantity = params[:quantity].to_i
       delivery_slip_number = params[:delivery_slip]
-      transfer_date = params[:transfer_date] || Date.today
+      transfer_date = params[:transfer_date]
       departure_address = params[:departure_address]
       arrival_address = params[:arrival_address]
       packaging_informations = params[:packaging_informations]
@@ -21,7 +22,6 @@ class PdfGeneratorController < ApplicationController
       delivery_slip = DeliverySlip.create!(
         company: company,
         contact: contact,
-        client_order: client_order,
         transfer_date: transfer_date,
         number: delivery_slip_number,
         packaging_informations: params[:packaging_informations],
@@ -32,7 +32,15 @@ class PdfGeneratorController < ApplicationController
         arrival_address: arrival_address
       )
 
-      delivery_slip.expedition_positions << expedition_positions if delivery_slip
+      if expedition_position_ids.present?
+        expedition_positions = ExpeditionPosition.where(id: expedition_position_ids)
+        delivery_slip.expedition_positions << expedition_positions
+      end
+
+      if client_order_ids.present?
+        client_orders = ClientOrder.where(id: client_order_ids)
+        delivery_slip.client_orders << client_orders
+      end
   
       render json: { delivery_slip_id: delivery_slip.id }, status: :ok
     end
@@ -45,7 +53,7 @@ class PdfGeneratorController < ApplicationController
     
       # Fetch delivery slips associated with the client through client orders
       last_delivery_slip = DeliverySlip
-                             .joins(:client_order)
+                             .joins(:client_orders)
                              .where(client_orders: { client_id: client_id })
                              .order(created_at: :desc)
                              .first
@@ -68,7 +76,7 @@ class PdfGeneratorController < ApplicationController
     
       # Company Name at the top-center
       pdf.text delivery_slip.company.name, size: 18, style: :bold, align: :center
-      pdf.move_down 150
+      pdf.move_down 120
 
       pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width) do
         # Delivery Number on the left
@@ -84,31 +92,30 @@ class PdfGeneratorController < ApplicationController
       pdf.move_down 20
 
       pdf.text "Contact : #{delivery_slip.contact&.first_name} #{delivery_slip.contact&.last_name}"
-      pdf.text "Company : #{delivery_slip.client_order.client&.name}"
-      pdf.move_down 20
-      # Addresses
-      pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width) do
-        # Departure Address on the left
-        pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width / 2) do
-          pdf.text "Departure Address:", style: :bold
-          pdf.text delivery_slip.departure_address
-        end
-    
-        # Arrival Address on the right
-        pdf.bounding_box([pdf.bounds.width - 200, pdf.cursor + 28], width: pdf.bounds.width / 2) do
-          pdf.text "Delivery Address:", style: :bold
-          pdf.text delivery_slip.arrival_address
-        end
+      pdf.text "Company : #{delivery_slip.client_orders[0].client&.name}"
+      delivery_slip.client_orders.each do |order|
+        pdf.text "Client Order(s): #{order.number}"
       end
+      pdf.move_down 20
+      pdf.text "Delivery Address:", style: :bold
+      pdf.text delivery_slip.arrival_address
+
+      pdf.move_down 10
+      pdf.text "Departure Address:", style: :bold
+      pdf.text delivery_slip.departure_address
       pdf.move_down 30
     
       # Table for Expedition Position
-      pdf.text "Expedition content :", size: 12, style: :italic, align: :left
-      pdf.move_down 20
-      table_data = [
-        ["Reference", "Designation", "Quantity"],
-        [delivery_slip.part.reference, delivery_slip.part.designation, delivery_slip.expedition_position.quantity]
-      ]
+      pdf.text "Expedition content :", size: 12, align: :left
+      pdf.move_down 5
+      table_data = [["Reference", "Designation", "Quantity"]]
+      delivery_slip.expedition_positions.each do |position|
+        table_data << [
+          position.part&.reference || "N/A",
+          position.part&.designation || "N/A",
+          position.quantity
+        ]
+      end
       pdf.table(table_data, column_widths: [180, 180, 180], position: :left, row_colors: ["F0F0F0", "FFFFFF"], header: true)
       pdf.move_down 20
     
@@ -125,7 +132,7 @@ class PdfGeneratorController < ApplicationController
           pdf.text delivery_slip.packaging_informations
         end
       end
-      pdf.move_down 20
+      pdf.move_down 30
 
       pdf.text "Transport Conditions:", style: :bold
       pdf.text delivery_slip.transport_conditions
