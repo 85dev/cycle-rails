@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_01_21_083658) do
+ActiveRecord::Schema[7.1].define(version: 2025_01_28_170213) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -310,6 +310,17 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_21_083658) do
     t.index ["transporter_id"], name: "index_expeditions_on_transporter_id"
   end
 
+  create_table "history_steps", force: :cascade do |t|
+    t.bigint "expedition_position_histories_id", null: false
+    t.string "location_name", null: false
+    t.date "transfer_date"
+    t.string "event_type", null: false
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expedition_position_histories_id"], name: "index_history_steps_on_expedition_position_histories_id"
+  end
+
   create_table "jwt_denylist", force: :cascade do |t|
     t.string "jti", null: false
     t.datetime "exp", null: false
@@ -582,6 +593,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_01_21_083658) do
   add_foreign_key "expedition_positions", "parts"
   add_foreign_key "expedition_positions", "supplier_order_indices"
   add_foreign_key "expeditions", "transporters"
+  add_foreign_key "history_steps", "expedition_position_histories", column: "expedition_position_histories_id"
   add_foreign_key "logistic_places", "companies"
   add_foreign_key "part_histories", "parts"
   add_foreign_key "part_histories_tables", "parts"
