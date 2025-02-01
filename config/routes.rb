@@ -7,6 +7,9 @@ Rails.application.routes.draw do
 
   # Account, request access and authentication routes
   get '/member_data', to: 'members#show'
+  get 'users/check_email', to: 'members#check_email'
+  post 'users/reset_password', to: 'members#reset_user_password'
+  post 'users/request_password_reset', to: 'members#request_user_password_reset'
   get 'accounts/:user_id/validated_companies_accounts', to: 'members#fetch_validated_companies_accounts'
   get 'accounts/:user_id/companies/:company_id/request_access', to: 'members#request_access_to_company'
   get 'accounts/:user_id/pending_requests', to: 'members#fetch_pending_requests'
@@ -18,6 +21,7 @@ Rails.application.routes.draw do
 
   # Separate GET fetch routes for related data
   get 'companies/search_company_by_name', to: 'parts#search_company_by_name'
+  get 'companies/:company_id/clients/:client_id/stocks_by_client', to: 'parts#fetch_stocks_by_client'
   get 'companies/:company_id/client_by_name', to: 'parts#fetch_client_by_name'
   get 'companies/:company_id/client_orders_by_company', to: 'parts#fetch_client_orders_by_company'
   get 'companies/:company_id/supplier_orders_by_company', to: 'parts#fetch_supplier_orders_by_company'

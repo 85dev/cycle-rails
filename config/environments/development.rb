@@ -30,13 +30,24 @@ Rails.application.configure do
     config.cache_store = :null_store
   end
 
-  # Store uploaded files on the local file system (see config/storage.yml for options).
-  config.active_storage.service = :local
-
-  # Don't care if the mailer can't send.
-  config.action_mailer.raise_delivery_errors = false
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.smtp_settings = {
+    address:              'smtp.gmail.com',
+    port:                 587,
+    domain:               'example.com',
+    user_name:            'backdriver.app',
+    password:             'pnpo qcka khkn iiye',
+    authentication:       'plain',
+    enable_starttls_auto: true
+  }
+  config.action_mailer.raise_delivery_errors = true
+  config.action_mailer.perform_deliveries = true
+  config.action_mailer.default_url_options = { host: 'localhost', port: 3000 }
 
   config.action_mailer.perform_caching = false
+
+  # Store uploaded files on the local file system (see config/storage.yml for options).
+  config.active_storage.service = :local
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
@@ -55,6 +66,18 @@ Rails.application.configure do
 
   # Highlight code that enqueued background job in logs.
   config.active_job.verbose_enqueue_logs = true
+
+  Rails.application.configure do
+    # Other configurations...
+  
+    # Ensure this line includes your frontend origin
+    config.action_cable.allowed_request_origins = [ 'http://localhost:8080', /http:\/\/localhost:8080.*/, 'http://localhost:5173', /http:\/\/localhost:5173.*/ ]
+  
+    # Ensure Action Cable URL is set
+    config.action_cable.url = "ws://localhost:3000/cable"
+  
+    # Other configurations...
+  end
 
 
   # Raises error for missing translations.

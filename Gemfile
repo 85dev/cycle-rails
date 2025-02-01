@@ -51,3 +51,4 @@ gem "rack-cors", "~> 2.0"
 gem 'faker'
 gem 'prawn'
 gem 'prawn-table'
+gem 'securerandom'

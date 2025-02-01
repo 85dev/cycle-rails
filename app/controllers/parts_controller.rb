@@ -1,7 +1,7 @@
 class PartsController < ApplicationController
     before_action :set_user_by_id, only: [:create_company, :companies_index]
     before_action :set_supplier, only: [:fetch_parts_by_supplier]
-    before_action :set_client, only: [:fetch_expedition_positions_by_client, :fetch_client_orders_by_client, :fetch_contacts_by_client, :create_part, :fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
+    before_action :set_client, only: [:fetch_stocks_by_client, :fetch_expedition_positions_by_client, :fetch_client_orders_by_client, :fetch_contacts_by_client, :create_part, :fetch_parts_by_client_and_consignment_stock, :fetch_parts_by_client, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_standard_stocks_by_client, :fetch_consignment_stocks_by_client]
     before_action :set_supplier_orders, only: [:parts_by_supplier_orders]
     before_action :set_client_orders, only: [:parts_by_client_orders]
     before_action :set_part, only: [:fetch_calculate_part_stocks, :consignment_stocks_positions_by_client, :fetch_client_order_positions_by_part, :standard_stocks_positions_by_client, :consignment_stocks_positions_by_client, :fetch_unsorted_client_positions, :fetch_expeditions_supplier_order_indices_by_part, :fetch_logistic_places_by_part, :fetch_sub_contractors_by_part, :fetch_supplier_orders_by_part]
@@ -541,6 +541,7 @@ class PartsController < ApplicationController
             position_params = {
               expedition_id: expedition.id,
               supplier_order_index_id: supplier_order_index.id,
+              supplier_order_position_id: supplier_order_position.id,
               part_id: part.id,
               quantity: quantities[index],
               is_clone: clones[index],
@@ -995,24 +996,30 @@ class PartsController < ApplicationController
     end
 
     def fetch_kpi_metrics
-      # Get all client orders for the company
       urgent_client_order_positions = ClientOrderPosition
         .joins(client_order: { client: :company })
         .where(clients: { company_id: params[:company_id] })
+        .distinct
         .where('client_order_positions.delivery_date >= ? AND client_order_positions.delivery_date <= ?', Date.today, Date.today + 30.days)
 
       future_client_order_positions = ClientOrderPosition
-      .joins(client_order: { client: :company })
-      .where(clients: { company_id: params[:company_id] })
-      .where('client_order_positions.delivery_date >= ? AND client_order_positions.delivery_date <= ?', Date.today, Date.today + 180.days)
+        .joins(client_order: { client: :company })
+        .where(clients: { company_id: params[:company_id] })
+        .distinct
+        .where('client_order_positions.delivery_date >= ? AND client_order_positions.delivery_date <= ?', Date.today, Date.today + 180.days)
 
       delayed_order_positions = ClientOrderPosition
-      .joins(client_order: { client: :company })
-      .where(clients: { company_id: params[:company_id] })
-      .where('client_order_positions.delivery_date < ?', Date.today)
-      .where(status: 'undelivered')
+        .joins(client_order: { client: :company })
+        .where(clients: { company_id: params[:company_id] })
+        .distinct
+        .where('client_order_positions.delivery_date < ?', Date.today)
+        .where(status: 'undelivered')
 
-      undelivered_expeditions = Expedition.where(status: 'undelivered').count
+      undelivered_expeditions = Expedition
+        .joins(supplier_order_indices: { supplier_order_position: { supplier_order: :supplier } })
+        .where(status: 'undelivered', suppliers: { company_id: params[:company_id] })
+        .distinct
+        .count
     
       urgent_orders = urgent_client_order_positions.where(status: 'undelivered').count
       future_orders = future_client_order_positions.where(status: 'undelivered').count
@@ -1409,12 +1416,13 @@ class PartsController < ApplicationController
     def fetch_undelivered_expeditions
       expeditions = Expedition
         .joins(supplier_order_indices: { supplier_order_position: { supplier_order: :supplier } }) # Join supplier for filtering
-        .includes(:transporter, expedition_positions: { part: {} }) # Preload transporter & parts
+        .includes(:transporter, supplier_order_indices: { part: {}, supplier_order_position: { supplier_order: {} } }) # Preload related data
         .where(status: 'undelivered')
         .where(suppliers: { company_id: params[:company_id] }) # Filter by supplier's company
+        .distinct
         .select(
           'expeditions.*',
-          'suppliers.name AS supplier_name' # Get supplier name
+          'suppliers.name AS supplier_name'        
         )
     
       result = expeditions.map do |expedition|
@@ -1425,14 +1433,16 @@ class PartsController < ApplicationController
           transporter_name: expedition.transporter&.name,
           supplier_name: expedition.attributes['supplier_name'],
           real_departure_time: expedition.real_departure_time,
-          arrival_time: expedition.arrival_time,
-          expedition_positions: expedition.expedition_positions.map do |position|
+          estimated_arrival_time: expedition.estimated_arrival_time,
+          expedition_positions: expedition.supplier_order_indices.map do |index|
             {
-              id: position.id,
-              part_id: position.part_id,
-              quantity: position.quantity,
-              part_reference: position.part.reference, # Part Reference
-              part_designation: position.part.designation # Part Designation
+              id: index.id,
+              quantity: index.quantity,
+              quantity_status: index.quantity_status,
+              part_id: index.part_id,
+              part_reference: index.part.reference,
+              part_designation: index.part.designation,
+              supplier_order_number: index.supplier_order_position.supplier_order.number # 🔹 Extract Supplier Order Number
             }
           end
         }
@@ -1443,37 +1453,47 @@ class PartsController < ApplicationController
 
     def fetch_delivered_expeditions
       expeditions = Expedition
-        .joins(supplier_order_indices: { supplier_order_position: { supplier_order: :supplier } }) # Join supplier for filtering
-        .includes(:transporter, expedition_positions: { part: {} }) # Preload transporter & parts
-        .where(status: 'delivered')
-        .where(suppliers: { company_id: params[:company_id] }) # Filter by supplier's company
-        .select(
-          'expeditions.*',
-          'suppliers.name AS supplier_name' # Get supplier name
-        )
+      .joins(supplier_order_indices: { supplier_order_position: { supplier_order: :supplier } }) # Join supplier for filtering
+      .includes(:transporter, supplier_order_indices: { supplier_order_position: { supplier_order: {} }, part: {} }) # Preload related data
+      .where(status: 'delivered')
+      .where(suppliers: { company_id: params[:company_id] }) # Filter by supplier's company
+      .distinct
+      .select(
+        'expeditions.*',
+        'suppliers.name AS supplier_name' # Get supplier name
+      )
     
       result = expeditions.map do |expedition|
+      {
+        id: expedition.id,
+        number: expedition.number,
+        status: expedition.status,
+        transporter_name: expedition.transporter&.name,
+        supplier_name: expedition.attributes['supplier_name'],
+        real_departure_time: expedition.real_departure_time,
+        arrival_time: expedition.arrival_time,
+        expedition_positions: expedition.supplier_order_indices.map do |index|
         {
-          id: expedition.id,
-          number: expedition.number,
-          status: expedition.status,
-          transporter_name: expedition.transporter&.name,
-          supplier_name: expedition.attributes['supplier_name'],
-          real_departure_time: expedition.real_departure_time,
-          arrival_time: expedition.arrival_time,
-          expedition_positions: expedition.expedition_positions.map do |position|
-            {
-              id: position.id,
-              part_id: position.part_id,
-              quantity: position.quantity,
-              part_reference: position.part.reference, # Part Reference
-              part_designation: position.part.designation # Part Designation
-            }
-          end
+          id: index.id,
+          part_id: index.part_id,
+          quantity: index.quantity,
+          part_reference: index.part.reference, # Part Reference
+          part_designation: index.part.designation, # Part Designation
+          supplier_order_number: index.supplier_order_position.supplier_order.number # Supplier Order Number
         }
+        end
+      }
       end
     
       render json: result, status: :ok
+    end
+
+    def fetch_stocks_by_client
+      stocks = @client.standard_stocks + @client.consignment_stocks
+    
+      render json: stocks, status: :ok
+    rescue ActiveRecord::RecordNotFound
+      render json: { error: "Client not found" }, status: :not_found
     end
 
     #FILTERED BY PART
@@ -1484,7 +1504,7 @@ class PartsController < ApplicationController
                                   .where(part_id: @part_searched.id)
                                   .select(
                                     'supplier_order_indices.*',
-                                    'supplier_order_positions.delivery_date AS delivery_date',
+                                    'expeditions.estimated_arrival_time AS estimated_arrival_time',
                                     'supplier_orders.number AS supplier_order_number',
                                     'suppliers.name AS supplier_name',
                                     'expeditions.real_departure_time AS real_departure_time',
@@ -1493,7 +1513,7 @@ class PartsController < ApplicationController
     
       render json: @supplier_order_indices.map do |index|
         index.attributes.merge(
-          delivery_date: index.attributes['delivery_date'],
+          estimated_arrival_time: index.attributes['estimated_arrival_time'],
           supplier_order: {
             number: index.attributes['supplier_order_number'],
             name: index.attributes['supplier_name']

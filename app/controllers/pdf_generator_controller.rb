@@ -74,17 +74,14 @@ class PdfGeneratorController < ApplicationController
     
       pdf = Prawn::Document.new
     
-      # Company Name at the top-center
       pdf.text delivery_slip.company.name, size: 18, style: :bold, align: :center
       pdf.move_down 120
 
       pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width) do
-        # Delivery Number on the left
         pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width / 2) do
           pdf.text "Delivery note : #{delivery_slip.number}", size: 12, style: :bold, align: :left
         end
       
-        # Transfer Date on the right
         pdf.bounding_box([pdf.bounds.width / 2, pdf.cursor + 16], width: pdf.bounds.width / 2) do
           pdf.text "Date : #{delivery_slip.transfer_date.strftime('%d/%m/%Y')}", size: 12, style: :bold, align: :right
         end
@@ -93,9 +90,9 @@ class PdfGeneratorController < ApplicationController
 
       pdf.text "Contact : #{delivery_slip.contact&.first_name} #{delivery_slip.contact&.last_name}"
       pdf.text "Company : #{delivery_slip.client_orders[0].client&.name}"
-      delivery_slip.client_orders.each do |order|
-        pdf.text "Client Order(s): #{order.number}"
-      end
+      client_order_numbers = delivery_slip.client_orders.map(&:number).join(", ")
+      pdf.text "Client Order(s): #{client_order_numbers}" unless client_order_numbers.empty?
+
       pdf.move_down 20
       pdf.text "Delivery Address:", style: :bold
       pdf.text delivery_slip.arrival_address
@@ -105,8 +102,7 @@ class PdfGeneratorController < ApplicationController
       pdf.text delivery_slip.departure_address
       pdf.move_down 30
     
-      # Table for Expedition Position
-      pdf.text "Expedition content :", size: 12, align: :left
+      pdf.text "Transport positions :", size: 12, align: :left
       pdf.move_down 5
       table_data = [["Reference", "Designation", "Quantity"]]
       delivery_slip.expedition_positions.each do |position|
@@ -120,13 +116,11 @@ class PdfGeneratorController < ApplicationController
       pdf.move_down 20
     
       pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width) do
-        # Gross Weight
         pdf.bounding_box([0, pdf.cursor], width: pdf.bounds.width / 3) do
           pdf.text "Gross Weight:", style: :bold
           pdf.text delivery_slip.brut_weight.to_s + "kg(s)"
         end
       
-        # Packaging Info
         pdf.bounding_box([pdf.bounds.width - 200, pdf.cursor + 28], width: pdf.bounds.width / 3) do
           pdf.text "Packaging Info:", style: :bold
           pdf.text delivery_slip.packaging_informations
@@ -137,7 +131,6 @@ class PdfGeneratorController < ApplicationController
       pdf.text "Transport Conditions:", style: :bold
       pdf.text delivery_slip.transport_conditions
     
-      # Page footer
       pdf.number_pages "<page>/<total>", align: :right, start_count_at: 1, at: [pdf.bounds.right - 50, 0]
     
       send_data(pdf.render, filename: "DeliverySlip_#{delivery_slip.number}.pdf", type: "application/pdf", disposition: "inline")

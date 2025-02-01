@@ -10,6 +10,43 @@ class MembersController < ApplicationController
         render json: companies, status: :ok
     end
 
+    def request_user_password_reset
+      user = User.find_by(email: params[:email])
+  
+      if user.nil?
+        return render json: { error: "User not found" }, status: :not_found
+      end
+  
+      # Generate a random 6-digit code
+      reset_code = SecureRandom.random_number(100000..999999)
+  
+      # Store the hashed code in the database for security (optional)
+      user.update!(reset_code: reset_code, reset_code_sent_at: Time.current)
+  
+      # Send email with the reset code
+      UserMailer.with(user: user, reset_code: reset_code).send_reset_code.deliver_later
+  
+      render json: { message: "Reset code sent to email" }, status: :ok
+    end
+
+    def reset_user_password
+      user = User.find_by(email: params[:email])
+          
+      if user.reset_code != params[:reset_code].to_s
+        return render json: { error: "Invalid or expired reset code" }, status: :unauthorized
+      end
+
+      if user.reset_code_sent_at < 120.minutes.ago
+        return render json: { error: "Reset code expired" }, status: :unauthorized
+      end
+    
+      if user.update(password: params[:new_password], reset_code: nil, reset_code_sent_at: nil)
+        render json: { message: 'Password updated successfully' }, status: :ok
+      else
+        render json: { error: user.errors.full_messages }, status: :unprocessable_entity
+      end
+    end
+
     def fetch_access_requests
       owned_companies = Company.joins(:accounts)
                         .where(accounts: { user_id: @user.id, is_owner: true })
@@ -91,6 +128,16 @@ class MembersController < ApplicationController
           account_created_at: user.account_created_at
         }
       }
+    end
+
+    def check_email
+      user = User.find_by(email: params[:email])
+    
+      if user
+        render json: { exists: true }, status: :ok
+      else
+        render json: { exists: false }, status: :not_found
+      end
     end
 
     def request_access_to_company
