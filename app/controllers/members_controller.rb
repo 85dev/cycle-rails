@@ -9,6 +9,20 @@ class MembersController < ApplicationController
     
         render json: companies, status: :ok
     end
+    
+    def verify_reset_code
+      user = User.find_by(email: params[:email])
+
+      if user.reset_code != params[:reset_code].to_s
+      return render json: { error: "Invalid reset code" }, status: :unauthorized
+      end
+
+      if user.reset_code_sent_at < 120.minutes.ago
+      return render json: { error: "Reset code expired" }, status: :unauthorized
+      end
+
+      render json: { message: "Reset code is valid" }, status: :ok
+    end
 
     def request_user_password_reset
       user = User.find_by(email: params[:email])

@@ -9,6 +9,7 @@ Rails.application.routes.draw do
   get '/member_data', to: 'members#show'
   get 'users/check_email', to: 'members#check_email'
   post 'users/reset_password', to: 'members#reset_user_password'
+  post 'users/verify_reset_code', to: 'members#verify_reset_code'
   post 'users/request_password_reset', to: 'members#request_user_password_reset'
   get 'accounts/:user_id/validated_companies_accounts', to: 'members#fetch_validated_companies_accounts'
   get 'accounts/:user_id/companies/:company_id/request_access', to: 'members#request_access_to_company'
