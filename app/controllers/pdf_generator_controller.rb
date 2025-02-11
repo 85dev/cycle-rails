@@ -135,4 +135,98 @@ class PdfGeneratorController < ApplicationController
     
       send_data(pdf.render, filename: "DeliverySlip_#{delivery_slip.number}.pdf", type: "application/pdf", disposition: "inline")
     end
+
+    def order_slip_single_position
+      order_slip = OrderSlip.create!(
+        company_id: params[:company_id],
+        supplier_order_position_id: params[:supplier_order_position_id],
+        supplier_order_id: params[:supplier_order_id],
+        contact_id: params[:contact_id],
+        is_boat: params[:is_boat] || false,
+        is_flight: params[:is_flight] || false,
+        is_train: params[:is_train] || false,
+        transporter_id: params[:transporter_id],
+        informations: params[:informations]
+      )
+  
+      render json: { id: order_slip.id, message: "Order Slip Created" }, status: :ok
+    rescue ActiveRecord::RecordInvalid => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
+    def generate_order_slip_single_position_pdf
+      order_slip = OrderSlip.find_by(id: params[:order_slip_id])
+      return render json: { error: "Order slip not found" }, status: :not_found unless order_slip
+    
+      supplier_order_position = order_slip.supplier_order_position
+      return render json: { error: "Supplier order position not found" }, status: :not_found unless supplier_order_position
+    
+      supplier_order = order_slip.supplier_order
+      return render json: { error: "Supplier order not found" }, status: :not_found unless supplier_order
+    
+      contact = order_slip.contact
+      transporter = order_slip.transporter
+      company = supplier_order.supplier.company
+
+      pdf = Prawn::Document.new
+
+      pdf.text company.name, size: 18, align: :center
+      pdf.move_down 50
+    
+      pdf.text "Purchase Order Number: #{supplier_order.number}", size: 12, style: :bold
+      pdf.move_down 10
+      
+      pdf.text "To: #{supplier_order.supplier.name}", size: 12
+      pdf.text "Contact: #{contact&.first_name} #{contact&.last_name}" if contact.present?
+      pdf.text "Order Date: #{supplier_order.emission_date.strftime('%d/%m/%Y')}", size: 12
+      pdf.move_down 20
+    
+      transit_methods = []
+      transit_methods << "Boat" if order_slip.is_boat
+      transit_methods << "Flight" if order_slip.is_flight
+      transit_methods << "Train" if order_slip.is_train
+      transit_methods_display = transit_methods.any? ? transit_methods.join(", ") : "Not specified"
+    
+      pdf.text "Transport Method: #{transit_methods_display}", size: 12
+      pdf.text "Transporter: #{transporter&.name}" if transporter.present?
+      pdf.move_down 20
+    
+      pdf.text "Position Details:", size: 12, style: :bold
+      pdf.move_down 5
+      table_data = [["Reference", "Description", "Quantity", "Price", "Total", "Delivery Date"]]
+    
+      amount = supplier_order_position.quantity.to_i * supplier_order_position.price.to_f
+      table_data << [
+        supplier_order_position.part.reference,
+        supplier_order_position.part.designation,
+        supplier_order_position.quantity,
+        format('%.2f', supplier_order_position.price),
+        format('%.2f', amount),
+        supplier_order_position.delivery_date.strftime('%d/%m/%Y')
+      ]
+    
+      pdf.table(table_data, column_widths: [100, 100, 80, 80, 80, 100], position: :center, row_colors: ["F0F0F0", "FFFFFF"], header: true)
+      pdf.move_down 10
+      pdf.text "Informations: #{order_slip.informations}" if order_slip.informations.present?
+      pdf.move_down 30
+    
+      pdf.text "Total Amount: #{format('%.2f', amount)} €", size: 12, style: :bold
+      pdf.move_down 20
+
+      pdf.text "Legal Notice:", size: 12
+      pdf.text company.legal_notice if company.legal_notice.present?
+      pdf.move_down 10
+
+      pdf.text "Authorized Signatory: #{company.authorized_signatory}", size: 12 if company.authorized_signatory.present?
+    
+      pdf.bounding_box([0, 50], width: pdf.bounds.width) do
+        pdf.text "#{company.legal_structure}, #{company.name}", size: 12, align: :center
+        pdf.text "#{company.address}", size: 12, align: :center
+        pdf.text "Tax ID: #{company.tax_id}", size: 10, align: :center if company.tax_id.present?
+        pdf.text "Reg. Number: #{company.registration_number}", size: 10, align: :center if company.registration_number.present?
+        pdf.text "Website: #{company.website}" if company.website.present?
+      end
+      pdf.number_pages "<page>/<total>", align: :right, start_count_at: 1, at: [pdf.bounds.right - 50, 0]
+      send_data(pdf.render, filename: "OrderSlip_#{supplier_order.number}.pdf", type: "application/pdf", disposition: "inline")
+    end
   end

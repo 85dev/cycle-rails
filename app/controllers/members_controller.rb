@@ -1,7 +1,8 @@
 class MembersController < ApplicationController
-    before_action :set_user_by_id, only: [:reject_access_request, :fetch_access_requests, :fetch_pending_requests, :fetch_validated_companies_accounts, :request_access_to_company]
+    before_action :set_user_by_id, only: [:send_user_account_authorization, :reject_access_request, :fetch_access_requests, :fetch_pending_requests, :fetch_validated_companies_accounts, :request_access_to_company]
     before_action :set_company, only: [:reject_access_request, :request_access_to_company, :fetch_users_for_company]
     before_action :set_account, only: [:validate_access_request]
+    before_action :set_user_by_email, only: [:send_verification_email, :check_email, :verify_access_code, :request_user_access_code, :reset_user_password]
 
     def fetch_validated_companies_accounts
         validated_accounts = @user.accounts.includes(:company).where(status: 'accepted')
@@ -9,52 +10,123 @@ class MembersController < ApplicationController
     
         render json: companies, status: :ok
     end
-    
-    def verify_reset_code
-      user = User.find_by(email: params[:email])
 
-      if user.reset_code != params[:reset_code].to_s
-      return render json: { error: "Invalid reset code" }, status: :unauthorized
+    def check_email
+      if @user
+        render json: { exists: true }, status: :ok
+      else
+        render json: { exists: false }, status: :not_found
       end
-
-      if user.reset_code_sent_at < 120.minutes.ago
-      return render json: { error: "Reset code expired" }, status: :unauthorized
-      end
-
-      render json: { message: "Reset code is valid" }, status: :ok
     end
 
-    def request_user_password_reset
-      user = User.find_by(email: params[:email])
-  
-      if user.nil?
-        return render json: { error: "User not found" }, status: :not_found
+    def send_verification_email
+      return render json: { error: "Email already registered" }, status: :unprocessable_entity if @user
+
+      unconfirmed_user = UnconfirmedUser.find_by('LOWER(email) = ?', params[:email].downcase)
+    
+      if unconfirmed_user.nil?
+        access_code = SecureRandom.random_number(100000..999999).to_s
+    
+        unconfirmed_user = UnconfirmedUser.create!(
+          email: params[:email].downcase,
+          access_code: access_code,
+          access_code_sent_at: Time.current
+        )
+      else
+        # Update the existing entry with a new access code
+        unconfirmed_user.update!(
+          access_code: SecureRandom.random_number(100000..999999).to_s,
+          access_code_sent_at: Time.current
+        )
       end
-  
-      # Generate a random 6-digit code
-      reset_code = SecureRandom.random_number(100000..999999)
-  
-      # Store the hashed code in the database for security (optional)
-      user.update!(reset_code: reset_code, reset_code_sent_at: Time.current)
-  
-      # Send email with the reset code
-      UserMailer.with(user: user, reset_code: reset_code).send_reset_code.deliver_later
-  
-      render json: { message: "Reset code sent to email" }, status: :ok
+    
+      UserMailer.with(email: unconfirmed_user.email, access_code: unconfirmed_user.access_code).send_verification_code.deliver_later
+    
+      render json: { message: "Verification code sent" }, status: :ok
+    end
+
+    def verify_access_code
+      if @user.access_code != params[:access_code].to_s
+        return render json: { error: "Invalid access code" }, status: :unauthorized
+      end
+
+      if @user.access_code_sent_at < 120.minutes.ago
+        return render json: { error: "Access code expired" }, status: :unauthorized
+      end
+
+      render json: { message: "Access code is valid" }, status: :ok
+    end
+
+    def verify_unconfirmed_user_access_code
+      unconfirmed_user = UnconfirmedUser.find_by('LOWER(email) = ?', params[:email].downcase)
+    
+      return render json: { error: "Email not found" }, status: :not_found unless unconfirmed_user
+    
+      if unconfirmed_user.access_code != params[:access_code].to_s
+        return render json: { error: "Invalid access code" }, status: :unauthorized
+      end
+    
+      if unconfirmed_user.access_code_sent_at < 120.minutes.ago
+        return render json: { error: "Access code expired" }, status: :unauthorized
+      end
+    
+      render json: { message: "Access code is valid" }, status: :ok
+    end
+
+    def send_user_account_authorization
+      guest_user = User.find_by(email: params[:email])
+      return render json: { error: "User not found" }, status: :not_found unless guest_user
+    
+      company = Company.find_by(id: params[:company_id])
+      return render json: { error: "Company not found" }, status: :not_found unless company
+    
+      owner_account = Account.find_by(user_id: @user.id, company_id: company.id, is_owner: true)
+      return render json: { error: "You do not have permission to grant access" }, status: :forbidden unless owner_account    
+    
+      existing_account = Account.find_by(user_id: guest_user.id, company_id: company.id)
+      return render json: { error: "User already has access to this company" }, status: :unprocessable_entity if existing_account
+    
+      account_created = Account.create!(
+        user: guest_user,
+        company: company, # Corrected reference
+        is_owner: params[:requested_owner_rights].to_s == 'true', # Ensures correct boolean handling
+        status: 'accepted'
+      )
+    
+      # Send email notification
+      UserMailer.with(user: guest_user, owner: @user).send_request_authorization.deliver_later if account_created.persisted?
+    
+      # ✅ Success message
+      render json: { message: "Access request sent successfully", request_id: account_created.id }, status: :ok
+    
+    rescue ActiveRecord::RecordInvalid => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    rescue StandardError => e
+      render json: { error: "An unexpected error occurred: #{e.message}" }, status: :internal_server_error
+    end
+    
+    def request_user_access_code
+      access_code = SecureRandom.random_number(100000..999999)
+
+      # Store the access code in the database
+      @user.update!(access_code: access_code, access_code_sent_at: Time.current)
+
+      # Send email with the access code
+      UserMailer.with(user: @user, access_code: access_code).send_access_code.deliver_later
+
+      render json: { message: "Access code sent to email" }, status: :ok
     end
 
     def reset_user_password
-      user = User.find_by(email: params[:email])
-          
-      if user.reset_code != params[:reset_code].to_s
-        return render json: { error: "Invalid or expired reset code" }, status: :unauthorized
+      if @user.access_code != params[:access_code].to_s
+        return render json: { error: "Invalid or expired access code" }, status: :unauthorized
       end
 
-      if user.reset_code_sent_at < 120.minutes.ago
-        return render json: { error: "Reset code expired" }, status: :unauthorized
+      if @user.access_code_sent_at < 120.minutes.ago
+        return render json: { error: "Access code expired" }, status: :unauthorized
       end
     
-      if user.update(password: params[:new_password], reset_code: nil, reset_code_sent_at: nil)
+      if @user.update(password: params[:new_password], access_code: nil, access_code_sent_at: nil)
         render json: { message: 'Password updated successfully' }, status: :ok
       else
         render json: { error: user.errors.full_messages }, status: :unprocessable_entity
@@ -144,16 +216,6 @@ class MembersController < ApplicationController
       }
     end
 
-    def check_email
-      user = User.find_by(email: params[:email])
-    
-      if user
-        render json: { exists: true }, status: :ok
-      else
-        render json: { exists: false }, status: :not_found
-      end
-    end
-
     def request_access_to_company
         existing_account = Account.find_by(user: @user, company: @company)
         if existing_account
@@ -225,6 +287,10 @@ class MembersController < ApplicationController
     end
 
     private
+
+    def set_user_by_email
+      @user = User.find_by('LOWER(email) = ?', params[:email].downcase)
+    end
 
     def set_user_by_id
         @user = User.find_by(id: params[:user_id])

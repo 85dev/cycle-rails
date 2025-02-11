@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vérification de votre adresse email</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+    <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px;">
+        <h2 style="color: #007bff; text-align: center;">Bienvenue !</h2>
+        
+        <p>Bonjour,</p>
+
+        <p>Merci de vous inscrire sur Cycle. Pour valider votre adresse email, veuillez entrer le code de vérification suivant :</p>
+
+        <h3 style="text-align: center; font-size: 24px; font-weight: bold; color: #28a745;">
+            <%= @access_code %>
+        </h3>
+
+        <p>Ce code est valable <strong>120 minutes</strong>. Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
+
+        <p>À bientôt,<br>L'équipe Support Cycle</p>
+    </div>
+</body>
+</html>

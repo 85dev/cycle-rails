@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
+ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -350,6 +350,25 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
     t.bigint "supplier_order_id", null: false
   end
 
+  create_table "order_slips", force: :cascade do |t|
+    t.bigint "supplier_order_position_id"
+    t.bigint "supplier_order_id"
+    t.bigint "contact_id"
+    t.bigint "transporter_id"
+    t.string "informations"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "is_boat"
+    t.boolean "is_flight"
+    t.boolean "is_train"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_order_slips_on_company_id"
+    t.index ["contact_id"], name: "index_order_slips_on_contact_id"
+    t.index ["supplier_order_id"], name: "index_order_slips_on_supplier_order_id"
+    t.index ["supplier_order_position_id"], name: "index_order_slips_on_supplier_order_position_id"
+    t.index ["transporter_id"], name: "index_order_slips_on_transporter_id"
+  end
+
   create_table "part_histories", force: :cascade do |t|
     t.bigint "part_id", null: false
     t.string "event_type"
@@ -523,6 +542,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
     t.string "quantity_status"
     t.bigint "contact_id"
     t.boolean "fully_delivered", default: false, null: false
+    t.datetime "emission_date"
     t.index ["contact_id"], name: "index_supplier_orders_on_contact_id"
     t.index ["supplier_id"], name: "index_supplier_orders_on_supplier_id"
   end
@@ -551,6 +571,14 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
     t.index ["company_id"], name: "index_transporters_on_company_id"
   end
 
+  create_table "unconfirmed_users", force: :cascade do |t|
+    t.string "email", null: false
+    t.string "access_code"
+    t.datetime "access_code_sent_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
@@ -559,8 +587,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
     t.datetime "remember_created_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "reset_code"
-    t.datetime "reset_code_sent_at"
+    t.string "access_code"
+    t.datetime "access_code_sent_at"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
@@ -597,6 +625,11 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_01_130725) do
   add_foreign_key "expeditions", "transporters"
   add_foreign_key "history_steps", "expedition_position_histories", column: "expedition_position_histories_id"
   add_foreign_key "logistic_places", "companies"
+  add_foreign_key "order_slips", "companies"
+  add_foreign_key "order_slips", "contacts"
+  add_foreign_key "order_slips", "supplier_order_positions"
+  add_foreign_key "order_slips", "supplier_orders"
+  add_foreign_key "order_slips", "transporters"
   add_foreign_key "part_histories", "parts"
   add_foreign_key "part_histories_tables", "parts"
   add_foreign_key "parts", "clients"
