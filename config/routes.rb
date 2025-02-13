@@ -28,6 +28,7 @@ Rails.application.routes.draw do
   get 'companies/:company_id/sales_distribution', to: 'parts#fetch_sales_distribution'
   get 'companies/:company_id/revenue_vs_costs', to: 'parts#fetch_revenue_vs_costs'
   get 'companies/:company_id/margins_by_part', to: 'parts#fetch_margins_by_part'
+  get 'companies/:company_id/parts_stocks', to: 'parts#fetch_all_parts_stocks'
 
   # Separate GET fetch routes for related data
   get 'companies/search_company_by_name', to: 'parts#search_company_by_name'
