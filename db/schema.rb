@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
+ActiveRecord::Schema[7.1].define(version: 2025_02_25_193544) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -36,6 +36,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "real_delivery_time"
+    t.boolean "archived", default: false
     t.index ["client_order_id"], name: "index_client_order_positions_on_client_order_id"
     t.index ["part_id"], name: "index_client_order_positions_on_part_id"
   end
@@ -101,6 +102,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
     t.bigint "supplier_order_index_id"
     t.boolean "is_clone", default: false, null: false
     t.string "finition_status", default: "draft"
+    t.boolean "archived", default: false
     t.index ["client_id"], name: "index_client_positions_on_client_id"
     t.index ["expedition_id"], name: "index_client_positions_on_expedition_id"
     t.index ["part_id"], name: "index_client_positions_on_part_id"
@@ -276,6 +278,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
     t.boolean "sorted"
     t.boolean "is_clone", default: false, null: false
     t.string "finition_status", default: "draft"
+    t.boolean "archived", default: false
     t.index ["expedition_id"], name: "index_expedition_positions_on_expedition_id"
     t.index ["part_id"], name: "index_expedition_positions_on_part_id"
     t.index ["supplier_order_index_id"], name: "index_expedition_positions_on_supplier_order_index_id"
@@ -307,6 +310,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
     t.decimal "price"
     t.bigint "transporter_id", null: false
     t.datetime "estimated_arrival_time"
+    t.bigint "company_id", null: false
+    t.index ["company_id"], name: "index_expeditions_on_company_id"
     t.index ["transporter_id"], name: "index_expeditions_on_transporter_id"
   end
 
@@ -509,6 +514,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
     t.string "quantity_status"
     t.boolean "delivered", default: false, null: false
     t.date "real_delivery_date"
+    t.boolean "archived"
     t.index ["part_id"], name: "index_supplier_order_positions_on_part_id"
     t.index ["supplier_order_id"], name: "index_supplier_order_positions_on_supplier_order_id"
   end
@@ -622,6 +628,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_06_142330) do
   add_foreign_key "expedition_positions", "expeditions"
   add_foreign_key "expedition_positions", "parts"
   add_foreign_key "expedition_positions", "supplier_order_indices"
+  add_foreign_key "expeditions", "companies"
   add_foreign_key "expeditions", "transporters"
   add_foreign_key "history_steps", "expedition_position_histories", column: "expedition_position_histories_id"
   add_foreign_key "logistic_places", "companies"

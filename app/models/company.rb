@@ -8,6 +8,7 @@ class Company < ApplicationRecord
     has_many :transporters, dependent: :destroy
     has_many :delivery_slips, dependent: :destroy
     has_many :order_slips, dependent: :destroy
+    has_many :expeditions, dependent: :destroy
 
     # Through :models relationships
     has_many :client_orders, through: :clients

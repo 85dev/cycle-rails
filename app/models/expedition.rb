@@ -1,5 +1,6 @@
 class Expedition < ApplicationRecord
     belongs_to :transporter
+    belongs_to :company
 
     has_many :expedition_positions, dependent: :destroy
     has_many :client_positions

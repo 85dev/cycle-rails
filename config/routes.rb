@@ -30,6 +30,9 @@ Rails.application.routes.draw do
   get 'companies/:company_id/margins_by_part', to: 'parts#fetch_margins_by_part'
   get 'companies/:company_id/parts_stocks', to: 'parts#fetch_all_parts_stocks'
 
+  # Consumptions GET routes
+  get 'clients/:client_id/consignment_stocks/:consignment_stock_id/consumptions_by_consignment_stock', to: 'parts#fetch_consumptions_by_consignment_stock'
+
   # Separate GET fetch routes for related data
   get 'companies/search_company_by_name', to: 'parts#search_company_by_name'
   get 'companies/:company_id/clients/:client_id/stocks_by_client', to: 'parts#fetch_stocks_by_client'
@@ -69,11 +72,13 @@ Rails.application.routes.draw do
   get 'companies/:company_id/order_slips_by_company', to: 'parts#fetch_order_slips_by_company'
   get 'companies/:company_id/clients/:client_id/client_orders_by_client', to: 'parts#fetch_client_orders_by_client'
   get 'companies/:company_id/clients/:client_id/expedition_positions_by_client', to: 'parts#fetch_expedition_positions_by_client'
-  
-  # Route DELETE for deleting orders
-  delete 'companies/:company_id/client_orders/:client_order_id', to: 'parts#delete_client_order'
-  delete 'companies/:company_id/supplier_orders/:supplier_order_id', to: 'parts#delete_supplier_order'
+
+  # Routes to DELETE or ARCHIVE items
+  get 'companies/:company_id/client_orders/:client_order_id', to: 'parts#archive_client_order'
+  get 'companies/:company_id/supplier_orders/:supplier_order_id', to: 'parts#archive_supplier_order'
   delete 'companies/:company_id/parts/:id', to: 'parts#delete_part'
+  get 'companies/:company_id/archive_expedition_position/:expedition_position_id', to: 'parts#archive_expedition_position'
+  get 'companies/:company_id/archive_client_position/:client_position_id', to: 'parts#archive_client_position'
 
   # Route POST & GET for creating and updating models
   post 'users/:user_id/companies', to: 'parts#create_company'
