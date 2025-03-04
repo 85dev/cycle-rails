@@ -728,6 +728,8 @@ class PartsController < ApplicationController
           LEFT JOIN supplier_order_positions ON supplier_order_positions.part_id = parts.id
           LEFT JOIN clients ON parts.client_id = clients.id
           LEFT JOIN client_positions ON client_positions.part_id = parts.id
+          LEFT JOIN parts_suppliers ON parts.id = parts_suppliers.part_id
+          LEFT JOIN suppliers ON parts_suppliers.supplier_id = suppliers.id
         SQL
         .where(company_id: @company.id)
         .select(
@@ -735,7 +737,8 @@ class PartsController < ApplicationController
           'MAX(client_order_positions.price) AS latest_client_price',
           'MAX(supplier_order_positions.price) AS latest_supplier_price',
           'COUNT(CASE WHEN client_positions.sorted = false THEN 1 END) AS unsorted_positions_count', # Count unsorted positions
-          'clients.name AS client_name' # Include the client's name
+          'clients.name AS client_name',
+          'ARRAY_AGG(DISTINCT suppliers.id) AS supplier_ids'
         )
         .group('parts.id, clients.name') # Group by parts.id and clients.name for aggregation
     
@@ -744,7 +747,8 @@ class PartsController < ApplicationController
           latest_client_price: part.attributes['latest_client_price'],
           latest_supplier_price: part.attributes['latest_supplier_price'],
           unsorted_positions_count: part.attributes['unsorted_positions_count'].to_i,
-          client_name: part.attributes['client_name']
+          client_name: part.attributes['client_name'],
+          supplier_ids: part.attributes['supplier_ids'] || []
         )
       }
     end
@@ -1084,128 +1088,19 @@ class PartsController < ApplicationController
     end
 
     def fetch_calculate_part_stocks
-      part_id = @part_searched.id
+      return render json: { error: 'Part not found' }, status: :not_found unless @part_searched
     
-      # Fetch stocks with proper joins
-      consignment_stock = ConsignmentStockPart.where(part_id: part_id).sum(:current_quantity)
-    
-      standard_stock = StandardStock.joins(:client_positions)
-                                    .where(client_positions: { part_id: part_id, archived: false  })
-                                    .sum(:quantity)
-    
-      subcontractor_stock = ExpeditionPosition.joins(:sub_contractors)
-                                              .where(sub_contractors: { id: SubContractor.select(:id) })
-                                              .where(part_id: part_id, archived: false)
-                                              .sum(:quantity)
-    
-      logistic_place_stock = ExpeditionPosition.joins(:logistic_places)
-                                               .where(logistic_places: { id: LogisticPlace.select(:id) })
-                                               .where(part_id: part_id, archived: false)
-                                               .sum(:quantity)
-    
-      ordered_supplier_orders = SupplierOrderPosition.where(part_id: part_id, archived: false)
-                                                     .where.not(status: 'completed')
-                                                     .sum(:quantity)
-    
-      in_transit_expeditions = SupplierOrderIndex.joins(:supplier_order_position)
-                                                 .joins(:expedition)
-                                                 .where(supplier_order_positions: { part_id: part_id })
-                                                 .where(expeditions: { status: ['undelivered', 'in_transit'] })
-                                                 .sum(:quantity)
-    
-      reserved_client_orders = ClientOrderPosition.joins(:client_order)
-                                                  .where(client_orders: { order_status: 'undelivered' })
-                                                  .where(part_id: part_id)
-                                                  .where(archived: false)
-                                                  .sum(:quantity)
-
-      total_current_stock = consignment_stock + standard_stock + subcontractor_stock + logistic_place_stock
-      total_available_stock = total_current_stock - reserved_client_orders
-      total_future_stock = total_available_stock + ordered_supplier_orders + in_transit_expeditions
-
-      result = {
-        current_stock: {
-          consignment_stock: consignment_stock,
-          standard_stock: standard_stock,
-          subcontractor_stock: subcontractor_stock,
-          logistic_place_stock: logistic_place_stock,
-          total: total_current_stock
-        },
-        ordered_stock: {
-          supplier_orders: ordered_supplier_orders,
-          expeditions: in_transit_expeditions
-        },
-        reserved_stock: reserved_client_orders,
-        total_current_stock: total_current_stock,
-        total_available_stock: total_available_stock,
-        total_future_stock: total_future_stock
-      }
+      stock_service = StockService.new(part: @part_searched)
+      result = stock_service.fetch_calculate_part_stocks
     
       render json: result, status: :ok
     end
 
     def fetch_all_parts_stocks
-      parts = Part.where(company_id: @company.id)
+      return render json: { error: 'Company not found' }, status: :not_found unless @company
     
-      consignment_stocks = ConsignmentStockPart.where(part_id: parts.select(:id))
-                                               .group(:part_id).sum(:current_quantity)
-    
-      subcontractor_stocks = ExpeditionPosition.joins(:sub_contractors)
-                                    .where(sub_contractors: { id: SubContractor.select(:id) })
-                                    .where(part_id: parts.select(:id), archived: false)
-                                    .group(:part_id)
-                                    .sum(:quantity)
-
-      logistic_place_stocks = ExpeditionPosition.joins(:logistic_places)
-                                    .where(logistic_places: { id: LogisticPlace.select(:id) })
-                                    .where(part_id: parts.select(:id), archived: false)
-                                    .group(:part_id)
-                                    .sum(:quantity)
-    
-      ordered_supplier_orders = SupplierOrderPosition.where(part_id: parts.select(:id), archived: false)
-                                                     .where.not(status: 'completed')
-                                                     .group(:part_id)
-                                                     .sum(:quantity)
-    
-      reserved_client_orders = ClientOrderPosition.where(part_id: parts.select(:id), status: 'undelivered')
-                                                  .where(archived: false)
-                                                  .group(:part_id).sum(:quantity)
-    
-      expedition_transit_stock = SupplierOrderIndex.where(part_id: parts.select(:id),status: 'transit')
-                                                  .group(:part_id).sum(:quantity)
-
-      client_names = Client.joins(client_positions: :part)
-                      .where(client_positions: { part_id: parts.select(:id) })
-                      .pluck('client_positions.part_id', 'clients.name')
-                      .to_h
-
-      stocks = parts.map do |part|
-        part_id = part.id
-    
-        consignment_stock = consignment_stocks[part_id] || 0
-        subcontractor_stock = subcontractor_stocks[part_id] || 0
-        logistic_place_stock = logistic_place_stocks[part_id] || 0
-    
-        total_current_stock = consignment_stock + subcontractor_stock + logistic_place_stock
-        reserved_stock = reserved_client_orders[part_id] || 0
-        total_available_stock = total_current_stock - reserved_stock
-        total_future_stock = total_available_stock + (ordered_supplier_orders[part_id] || 0) + (expedition_transit_stock[part_id] || 0)
-    
-        {
-          id: part_id,
-          client_name: client_names[part_id],
-          reference_and_designation: "#{part.reference} #{part.designation}",
-          consignment_stock: consignment_stock,
-          subcontractor_stock: subcontractor_stock,
-          logistic_place_stock: logistic_place_stock,
-          total_current_stock: total_current_stock,
-          reserved_stock: reserved_stock,
-          total_available_stock: total_available_stock,
-          total_future_stock: total_future_stock,
-          supplier_orders: ordered_supplier_orders[part_id] || 0,
-          expeditions: expedition_transit_stock[part_id] || 0
-        }
-      end
+      stock_service = StockService.new(company: @company)
+      stocks = stock_service.fetch_all_parts_stocks
     
       render json: stocks, status: :ok
     end
@@ -2138,25 +2033,12 @@ class PartsController < ApplicationController
       new_position
     end
 
-    # Available stock for @part
     def calculate_available_stock(part_id)
-      # Compute only relevant stock quantities
-      total_available_stock = ConsignmentStockPart.where(part_id: part_id).sum(:current_quantity) +
-                              StandardStock.joins(:client_positions)
-                                          .where(client_positions: { part_id: part_id })
-                                          .sum(:quantity) +
-                              ExpeditionPosition.joins(:sub_contractors)
-                                                .where(part_id: part_id, archived: false)
-                                                .sum(:quantity) +
-                              ExpeditionPosition.joins(:logistic_places)
-                                                .where(part_id: part_id, archived: false)
-                                                .sum(:quantity)
-
-      total_available_stock
+      stock_service = StockService.new
+      stock_service.calculate_available_stock(part_id)
     end
 
     # STRONG PARAMS PERMISSIONS 
-
     def transporter_params
       params.require(:transporter).permit(:name, :is_air, :is_land, :is_sea)
     end
