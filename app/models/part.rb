@@ -10,6 +10,8 @@ class Part < ApplicationRecord
   has_many :consignment_stock_parts
   has_many :expedition_position_histories
   has_many :expedition_positions
+  has_many :part_lifecycles, dependent: :destroy
+  accepts_nested_attributes_for :part_lifecycles, allow_destroy: true
 
   has_and_belongs_to_many :suppliers
   has_and_belongs_to_many :supplier_orders

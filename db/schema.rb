@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_02_25_193544) do
+ActiveRecord::Schema[7.1].define(version: 2025_03_05_142427) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -398,6 +398,18 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_25_193544) do
     t.index ["part_id"], name: "index_part_histories_tables_on_part_id"
   end
 
+  create_table "part_lifecycles", force: :cascade do |t|
+    t.bigint "part_id", null: false
+    t.string "step_name", null: false
+    t.string "entity_type", null: false
+    t.bigint "entity_id", null: false
+    t.integer "sequence_order", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entity_type", "entity_id"], name: "index_part_lifecycles_on_entity"
+    t.index ["part_id"], name: "index_part_lifecycles_on_part_id"
+  end
+
   create_table "parts", force: :cascade do |t|
     t.string "designation"
     t.string "reference"
@@ -639,6 +651,7 @@ ActiveRecord::Schema[7.1].define(version: 2025_02_25_193544) do
   add_foreign_key "order_slips", "transporters"
   add_foreign_key "part_histories", "parts"
   add_foreign_key "part_histories_tables", "parts"
+  add_foreign_key "part_lifecycles", "parts"
   add_foreign_key "parts", "clients"
   add_foreign_key "parts", "companies"
   add_foreign_key "standard_stocks", "clients"

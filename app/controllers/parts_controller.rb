@@ -64,6 +64,20 @@ class PartsController < ApplicationController
             @part.sub_contractors << subcontractors
           end
 
+          if params[:lifecycles]
+            params[:lifecycles].each_with_index do |step, index|
+              entity_class = step["entity_type"].constantize rescue nil # Prevent errors
+              next unless entity_class && entity_class.exists?(step["entity_id"])
+            
+              @part.part_lifecycles.create!(
+                step_name: step["step_name"],
+                entity_type: step["entity_type"], 
+                entity_id: step["entity_id"],
+                sequence_order: index + 1
+              )
+            end
+          end
+
           render json: { success: 'Part created successfully', part: @part }, status: :created
         else
           render json: { errors: @part.errors.full_messages }, status: :unprocessable_entity
