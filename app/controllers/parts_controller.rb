@@ -1771,13 +1771,38 @@ class PartsController < ApplicationController
         .limit(1)
         .pluck(:price)
         .first
+
+        lifecycle_steps = @part_searched.part_lifecycles.order(sequence_order: :asc).map do |step|
+          entity_name = case step.entity_type
+                        when 'Supplier'
+                          Supplier.find_by(id: step.entity_id)&.name
+                        when 'Client'
+                          Client.find_by(id: step.entity_id)&.name
+                        when 'SubContractor'
+                          SubContractor.find_by(id: step.entity_id)&.name
+                        when 'LogisticPlace'
+                          LogisticPlace.find_by(id: step.entity_id)&.name
+                        else
+                          nil
+                        end
+    
+          {
+            id: step.id,
+            step_name: step.step_name,
+            entity_type: step.entity_type,
+            entity_id: step.entity_id,
+            entity_name: entity_name,  # Dynamically fetch entity name
+            sequence_order: step.sequence_order
+          }
+        end
     
         render json: @part_searched.as_json.merge(
           suppliers: suppliers,
           client: client, 
           sub_contractors: sub_contractors, 
           current_supplier_price: last_supplier_order_price, 
-          current_client_price: last_client_order_price
+          current_client_price: last_client_order_price,
+          lifecycle_steps: lifecycle_steps
         )
       else
         render json: { error: "Part not found" }, status: :not_found
