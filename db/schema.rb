@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_03_08_175631) do
+ActiveRecord::Schema[7.1].define(version: 2025_03_09_191250) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -24,6 +24,17 @@ ActiveRecord::Schema[7.1].define(version: 2025_03_08_175631) do
     t.boolean "requested_owner_rights"
     t.index ["company_id"], name: "index_accounts_on_company_id"
     t.index ["user_id"], name: "index_accounts_on_user_id"
+  end
+
+  create_table "client_order_deliveries", force: :cascade do |t|
+    t.bigint "part_id", null: false
+    t.bigint "client_order_position_id", null: false
+    t.date "delivery_date", null: false
+    t.integer "quantity", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_order_position_id"], name: "index_client_order_deliveries_on_client_order_position_id"
+    t.index ["part_id"], name: "index_client_order_deliveries_on_part_id"
   end
 
   create_table "client_order_positions", force: :cascade do |t|
@@ -618,6 +629,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_03_08_175631) do
 
   add_foreign_key "accounts", "companies"
   add_foreign_key "accounts", "users"
+  add_foreign_key "client_order_deliveries", "client_order_positions"
+  add_foreign_key "client_order_deliveries", "parts"
   add_foreign_key "client_order_positions", "client_orders"
   add_foreign_key "client_order_positions", "parts"
   add_foreign_key "client_orders", "clients"

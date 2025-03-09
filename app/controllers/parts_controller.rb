@@ -543,9 +543,10 @@ class PartsController < ApplicationController
       destination_type = params[:destination_type]
       destination_name = params[:destination_name]
       delivery_slip = params[:delivery_slip]
-      transfer_date = params[:transfer_date] || Date.today
+      transfer_date = params[:transfer_date]
       client_order_id = params[:client_order_id]
       is_partial = params[:is_partial]
+      delivery_date = params[:delivery_date]
 
       return render json: { error: "Expedition position not found" }, status: :not_found unless expedition_position
     
@@ -580,8 +581,18 @@ class PartsController < ApplicationController
             client = Client.find_by(name: destination_name)
             raise ActiveRecord::RecordNotFound, "Client not found" unless client
 
-            update_client_order_position(client_order_id, transfer_quantity, is_partial)
-
+            if client_order_id
+              update_client_order_position(client_order_id, transfer_date, transfer_quantity, is_partial)
+              client_order_position = ClientOrderPosition.find_by(id: client_order_id)
+            
+              ClientOrderDelivery.create!(
+                part_id: params[:part_id],
+                client_order_position_id: client_order_position.id,
+                delivery_date: transfer_date,
+                quantity: transfer_quantity
+              ) 
+            end
+ 
             create_client_position(
               client_id: client.id,
               part_id: params[:part_id],
@@ -602,7 +613,7 @@ class PartsController < ApplicationController
             client = Client.find_by(name: destination_name)
             raise ActiveRecord::RecordNotFound, "Client not found" unless client
     
-            update_client_order_position(client_order_id, transfer_quantity, is_partial)
+            update_client_order_position(client_order_id, transfer_date, transfer_quantity, is_partial)
 
             create_client_position(
               client_id: client.id,
@@ -2035,7 +2046,7 @@ class PartsController < ApplicationController
   
     private
 
-    def update_client_order_position(client_order_id, transfer_quantity, is_partial)
+    def update_client_order_position(client_order_id, transfer_date, transfer_quantity, is_partial)
       client_order_position = ClientOrderPosition.find_by(id: client_order_id)
       raise ActiveRecord::RecordNotFound, "Client position not found" unless client_order_position
     
@@ -2048,6 +2059,7 @@ class PartsController < ApplicationController
         new_remaining_quantity = client_order_position.quantity.to_i - new_delivered_quantity
     
         client_order_position.update!(
+          real_delivery_time: transfer_date,
           real_quantity_delivered: new_delivered_quantity,
           remaining_quantity_to_be_delivered: new_remaining_quantity.positive? ? new_remaining_quantity : 0,
           partial_quantity_delivered: new_partial_quantity,
