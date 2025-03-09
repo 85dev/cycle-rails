@@ -299,6 +299,9 @@ class PartsController < ApplicationController
             ClientOrderPosition.create!(
               client_order: @client_order,
               part: part,
+              remaining_quantity_to_be_delivered: position[:quantity],
+              real_quantity_delivered: 0,
+              partial_quantity_delivered: 0,
               quantity: position[:quantity],
               price: position[:price],
               delivery_date: position[:delivery_date],
@@ -393,6 +396,7 @@ class PartsController < ApplicationController
     
               # Create SupplierOrderPosition for each position
               order_position = SupplierOrderPosition.create!(
+                archived: false,
                 supplier_order: @supplier_order,
                 part: part,
                 price: position[:price],
@@ -442,7 +446,7 @@ class PartsController < ApplicationController
     
           ids.each_with_index do |position_id, index|
             supplier_order_position = SupplierOrderPosition.find(position_id)
-            shipped_quantity = quantities[index] || 0
+            shipped_quantity = quantities[index]
             is_partial = partials[index]
 
             supplier_order_index = SupplierOrderIndex.create!(
@@ -453,22 +457,21 @@ class PartsController < ApplicationController
               part: supplier_order_position.part,
               expedition: @expedition
             )
-    
-            remaining_quantity = (supplier_order_position.quantity || 0) - shipped_quantity
-    
-            new_status =
-            if remaining_quantity <= 0 || !is_partial
-              "completed"
-            elsif remaining_quantity > 0 || is_partial
-              "partial_sent_and_production"
+            
+            if is_partial
+              remaining_quantity = (supplier_order_position.quantity || 0) - shipped_quantity
+              supplier_order_position.update!(
+                quantity: remaining_quantity,
+                partial_quantity_delivered: (supplier_order_position.partial_quantity_delivered || 0) + shipped_quantity,
+                status: "partial_sent_and_production"
+              )
             else
-              "production"
+              total_delivered_quantity = (supplier_order_position.partial_quantity_delivered || 0) + shipped_quantity
+              supplier_order_position.update!(
+                real_quantity_delivered: total_delivered_quantity,
+                status: "completed"
+              )
             end
-    
-            supplier_order_position.update!(
-              quantity: remaining_quantity,
-              status: new_status
-            )
           end
     
           render json: { success: "Expedition created successfully", expedition: @expedition }, status: :created
@@ -541,7 +544,9 @@ class PartsController < ApplicationController
       destination_name = params[:destination_name]
       delivery_slip = params[:delivery_slip]
       transfer_date = params[:transfer_date] || Date.today
-    
+      client_order_id = params[:client_order_id]
+      is_partial = params[:is_partial]
+
       return render json: { error: "Expedition position not found" }, status: :not_found unless expedition_position
     
       is_clone = params[:is_clone].present? ? params[:is_clone] : false
@@ -574,7 +579,9 @@ class PartsController < ApplicationController
           when "client"
             client = Client.find_by(name: destination_name)
             raise ActiveRecord::RecordNotFound, "Client not found" unless client
-    
+
+            update_client_order_position(client_order_id, transfer_quantity, is_partial)
+
             create_client_position(
               client_id: client.id,
               part_id: params[:part_id],
@@ -595,6 +602,8 @@ class PartsController < ApplicationController
             client = Client.find_by(name: destination_name)
             raise ActiveRecord::RecordNotFound, "Client not found" unless client
     
+            update_client_order_position(client_order_id, transfer_quantity, is_partial)
+
             create_client_position(
               client_id: client.id,
               part_id: params[:part_id],
@@ -736,10 +745,26 @@ class PartsController < ApplicationController
     end
 
     def parts_by_company
+      latest_client_orders = <<-SQL
+        SELECT DISTINCT ON (client_order_positions.part_id) 
+          client_order_positions.part_id, 
+          client_order_positions.price 
+        FROM client_order_positions 
+        ORDER BY client_order_positions.part_id, client_order_positions.created_at DESC
+      SQL
+    
+      latest_supplier_orders = <<-SQL
+        SELECT DISTINCT ON (supplier_order_positions.part_id) 
+          supplier_order_positions.part_id, 
+          supplier_order_positions.price 
+        FROM supplier_order_positions 
+        ORDER BY supplier_order_positions.part_id, supplier_order_positions.created_at DESC
+      SQL
+    
       @parts = Part
         .joins(<<-SQL)
-          LEFT JOIN client_order_positions ON client_order_positions.part_id = parts.id
-          LEFT JOIN supplier_order_positions ON supplier_order_positions.part_id = parts.id
+          LEFT JOIN (#{latest_client_orders}) latest_client_prices ON latest_client_prices.part_id = parts.id
+          LEFT JOIN (#{latest_supplier_orders}) latest_supplier_prices ON latest_supplier_prices.part_id = parts.id
           LEFT JOIN clients ON parts.client_id = clients.id
           LEFT JOIN client_positions ON client_positions.part_id = parts.id
           LEFT JOIN parts_suppliers ON parts.id = parts_suppliers.part_id
@@ -748,13 +773,13 @@ class PartsController < ApplicationController
         .where(company_id: @company.id)
         .select(
           'parts.*',
-          'MAX(client_order_positions.price) AS latest_client_price',
-          'MAX(supplier_order_positions.price) AS latest_supplier_price',
+          'latest_client_prices.price AS latest_client_price',
+          'latest_supplier_prices.price AS latest_supplier_price',
           'COUNT(CASE WHEN client_positions.sorted = false THEN 1 END) AS unsorted_positions_count', # Count unsorted positions
           'clients.name AS client_name',
           'ARRAY_AGG(DISTINCT suppliers.id) AS supplier_ids'
         )
-        .group('parts.id, clients.name') # Group by parts.id and clients.name for aggregation
+        .group('parts.id, clients.name, latest_client_prices.price, latest_supplier_prices.price') # Ensure grouping includes the latest prices
     
       render json: @parts.map { |part|
         part.attributes.merge(
@@ -814,7 +839,7 @@ class PartsController < ApplicationController
                                  .joins(client_order: :client)
                                  .joins(:part)
                                  .where(clients: { company_id: @company.id })
-                                 .where(status: 'undelivered')
+                                 .where.not(status: 'delivered')
                                  .where(archived: false)
                                  .select(
                                    'client_order_positions.id AS position_id',
@@ -1048,6 +1073,7 @@ class PartsController < ApplicationController
         {
           id: stock.id,
           address: stock.address,
+          name: stock.name,
           contact_name: stock.contact_name,
           client_positions: stock.client_positions.where(archived: false).pluck(
             :id, :part_id, :quantity, :sorted
@@ -1072,6 +1098,7 @@ class PartsController < ApplicationController
         {
           id: stock.id,
           address: stock.address,
+          name: stock.name,
           contact_name: stock.contact_name,
           client_positions: stock.client_positions.where(archived: false).pluck(
             :id, :part_id, :quantity, :sorted
@@ -1422,6 +1449,7 @@ class PartsController < ApplicationController
         {
           subcontractor_name: subcontractor.name,
           subcontractor_id: subcontractor.id,
+          knowledge: subcontractor.knowledge,
           positions: positions.map do |position|
             {
               expedition_position_id: position.id,
@@ -2006,6 +2034,33 @@ class PartsController < ApplicationController
     end
   
     private
+
+    def update_client_order_position(client_order_id, transfer_quantity, is_partial)
+      client_order_position = ClientOrderPosition.find_by(id: client_order_id)
+      raise ActiveRecord::RecordNotFound, "Client position not found" unless client_order_position
+    
+      client_order_position.with_lock do
+        previous_delivered_quantity = client_order_position.real_quantity_delivered.to_i
+        previous_partial_quantity = client_order_position.partial_quantity_delivered.to_i
+    
+        new_delivered_quantity = previous_delivered_quantity + transfer_quantity
+        new_partial_quantity = previous_partial_quantity + transfer_quantity
+        new_remaining_quantity = client_order_position.quantity.to_i - new_delivered_quantity
+    
+        client_order_position.update!(
+          real_quantity_delivered: new_delivered_quantity,
+          remaining_quantity_to_be_delivered: new_remaining_quantity.positive? ? new_remaining_quantity : 0,
+          partial_quantity_delivered: new_partial_quantity,
+          status: determine_delivery_status(client_order_position.quantity, new_delivered_quantity, is_partial)
+        )
+      end
+    end
+
+    def determine_delivery_status(total_order_quantity, delivered_quantity, is_partial)
+      return "undelivered" if delivered_quantity.zero?
+      return "delivered" if delivered_quantity >= total_order_quantity && !is_partial
+      "partially_delivered"
+    end
 
     def fetch_transit_methods(order_slip)
       methods = []

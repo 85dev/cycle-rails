@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2025_03_05_142427) do
+ActiveRecord::Schema[7.1].define(version: 2025_03_08_175631) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -37,6 +37,9 @@ ActiveRecord::Schema[7.1].define(version: 2025_03_05_142427) do
     t.datetime "updated_at", null: false
     t.datetime "real_delivery_time"
     t.boolean "archived", default: false
+    t.integer "real_quantity_delivered"
+    t.integer "partial_quantity_delivered"
+    t.integer "remaining_quantity_to_be_delivered", default: 0
     t.index ["client_order_id"], name: "index_client_order_positions_on_client_order_id"
     t.index ["part_id"], name: "index_client_order_positions_on_part_id"
   end
@@ -527,6 +530,8 @@ ActiveRecord::Schema[7.1].define(version: 2025_03_05_142427) do
     t.boolean "delivered", default: false, null: false
     t.date "real_delivery_date"
     t.boolean "archived"
+    t.integer "partial_quantity_delivered"
+    t.integer "real_quantity_delivered"
     t.index ["part_id"], name: "index_supplier_order_positions_on_part_id"
     t.index ["supplier_order_id"], name: "index_supplier_order_positions_on_supplier_order_id"
   end

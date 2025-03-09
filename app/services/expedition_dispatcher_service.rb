@@ -30,13 +30,11 @@ class ExpeditionDispatcherService
           supplier_order_position.update!(real_delivery_date: @arrival_time)
         end    
 
-        # Fetch or create Part
         part_reference = @references[index]
         part_designation = @designations[index]
         part = @part_cache["#{part_reference}-#{part_designation}"] ||= Part.find_by(reference: part_reference, designation: part_designation)
         raise ActiveRecord::RecordNotFound, "Part not found: #{part_reference} - #{part_designation}" unless part
 
-        # Handle client dispatch
         client_name = @clients[index].presence
         if client_name
           client = Client.find_by(name: client_name)
@@ -58,11 +56,9 @@ class ExpeditionDispatcherService
             )
           end
         else
-          # Handle subcontractor or logistic place dispatch
           subcontractor_name = @subcontractors[index].presence
           logistic_place_name = @logistic_places[index].presence
 
-          # Parameters for creating the expedition position
           position_params = {
             expedition_id: @expedition.id,
             supplier_order_index_id: supplier_order_index.id,
@@ -73,7 +69,6 @@ class ExpeditionDispatcherService
             finition_status: supplier_order_index.finition_status
           }
 
-          # Handle subcontractor
           if subcontractor_name
             subcontractor = SubContractor.find_by(name: subcontractor_name)
             raise ActiveRecord::RecordNotFound, "Subcontractor not found: #{subcontractor_name}" unless subcontractor
@@ -82,7 +77,6 @@ class ExpeditionDispatcherService
             position_params[:subcontractor_id] = subcontractor.id
           end
 
-          # Handle logistic place
           if logistic_place_name
             logistic_place = LogisticPlace.find_by(name: logistic_place_name)
             raise ActiveRecord::RecordNotFound, "Logistic place not found: #{logistic_place_name}" unless logistic_place
@@ -91,13 +85,10 @@ class ExpeditionDispatcherService
             position_params[:logistic_place_id] = logistic_place.id
           end
 
-          # Always create a new expedition position for each entry
           position = create_expedition_position(**position_params)
 
-          # Add logistic place associations if applicable
           position.logistic_places << logistic_place if logistic_place_name && !position.logistic_places.exists?(logistic_place.id)
 
-          # Add subcontractor associations if applicable
           position.sub_contractors << subcontractor if subcontractor_name && !position.sub_contractors.exists?(subcontractor.id)
         end
       end

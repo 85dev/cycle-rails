@@ -41,10 +41,9 @@ class StockService
     def fetch_all_parts_stocks
       return [] unless @company
     
-      parts = Part.includes(:suppliers).where(company_id: @company.id) # Preload suppliers
+      parts = Part.includes(:suppliers).where(company_id: @company.id)
       part_ids = parts.pluck(:id)
     
-      # Preload stock values in hashes for efficiency (excluding standard stocks)
       consignment_stocks = calculate_consignment_stock(part_ids)
       subcontractor_stocks = calculate_subcontractor_stock(part_ids)
       logistic_place_stocks = calculate_logistic_place_stock(part_ids)
@@ -56,7 +55,7 @@ class StockService
                            .where(client_positions: { part_id: part_ids })
                            .pluck('client_positions.part_id', 'clients.name')
                            .to_h
-    
+     
       parts.map do |part|
         part_id = part.id
         consignment_stock = consignment_stocks[part_id] || 0
@@ -118,11 +117,20 @@ class StockService
       group ? query.group(:part_id).sum(:quantity) : query.sum(:quantity)
     end
   
+  
     def calculate_ordered_supplier_orders(part_ids, group: false)
       query = SupplierOrderPosition.where(part_id: part_ids, archived: false)
                                    .where.not(status: 'completed')
   
-      group ? query.group(:part_id).sum(:quantity) : query.sum(:quantity)
+      if group
+        query = query.group(:part_id)
+                     .select("part_id, 
+                              SUM(quantity - COALESCE(partial_quantity_delivered, 0) - COALESCE(real_quantity_delivered, 0)) AS remaining_quantity")
+                     .index_by(&:part_id)
+                     .transform_values { |record| record.remaining_quantity.to_i }
+      else
+        query.sum("quantity - COALESCE(partial_quantity_delivered, 0) - COALESCE(real_quantity_delivered, 0)")
+      end
     end
   
     def calculate_in_transit_expeditions(part_ids, group: false)

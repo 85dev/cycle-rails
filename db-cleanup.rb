@@ -1,16 +1,29 @@
-# db_truncate.rb
-
 require_relative './config/environment'
 
 ActiveRecord::Base.connection.transaction do
-  # Disable foreign key checks temporarily
+  # Disable foreign key checks temporarily (for PostgreSQL)
   ActiveRecord::Base.connection.execute("SET session_replication_role = 'replica';")
 
-  # Get all table names except `users`, `schema_migrations`, and `ar_internal_metadata`
-  tables = ActiveRecord::Base.connection.tables - ['schema_migrations', 'ar_internal_metadata']
+  # Define tables to **keep** (not truncated)
+  KEEP_TABLES = %w[
+    users
+    parts
+    suppliers
+    sub_contractors
+    logistic_places
+    warehouses
+    clients
+    companies
+    accounts
+    schema_migrations
+    ar_internal_metadata
+  ]
 
-  # Truncate each table to delete all data
-  tables.each do |table|
+  # Get all table names except those we want to keep
+  tables_to_truncate = ActiveRecord::Base.connection.tables - KEEP_TABLES
+
+  # Truncate only selected tables
+  tables_to_truncate.each do |table|
     ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{table} CASCADE;")
     puts "Truncated #{table}"
   end
@@ -19,4 +32,4 @@ ActiveRecord::Base.connection.transaction do
   ActiveRecord::Base.connection.execute("SET session_replication_role = 'origin';")
 end
 
-puts "Database cleanup complete. All tables except the ones you choose have been truncated."
+puts "Database cleanup complete. Business-related data has been removed while preserving essential records."
