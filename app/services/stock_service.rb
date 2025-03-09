@@ -110,27 +110,47 @@ class StockService
   
     def calculate_reserved_stock(part_ids, group: false)
       query = ClientOrderPosition.joins(:client_order)
-                                 .where(client_orders: { order_status: 'undelivered' })
-                                 .where(part_id: part_ids)
-                                 .where(archived: false)
-  
-      group ? query.group(:part_id).sum(:quantity) : query.sum(:quantity)
+                                 .where(client_order_positions: { part_id: part_ids, archived: false })
+                                 .where.not(client_order_positions: { status: 'delivered' })
+                                 .select("client_order_positions.part_id, 
+                                          SUM(client_order_positions.quantity - COALESCE(client_order_positions.real_quantity_delivered, 0)) AS reserved_quantity")
+      
+      if group
+        query.group("client_order_positions.part_id")
+             .index_by(&:part_id)
+             .transform_values { |record| record.reserved_quantity.to_i }
+      else
+        query.sum("client_order_positions.quantity - COALESCE(client_order_positions.real_quantity_delivered, 0)")
+      end
     end
-  
-  
+
     def calculate_ordered_supplier_orders(part_ids, group: false)
       query = SupplierOrderPosition.where(part_id: part_ids, archived: false)
-                                   .where.not(status: 'completed')
-  
+      
+      # Exclude completed orders
+      pending_orders = query.where.not(status: 'completed')
+    
       if group
-        query = query.group(:part_id)
-                     .select("part_id, 
-                              SUM(quantity - COALESCE(partial_quantity_delivered, 0) - COALESCE(real_quantity_delivered, 0)) AS remaining_quantity")
-                     .index_by(&:part_id)
-                     .transform_values { |record| record.remaining_quantity.to_i }
+        remaining_quantities = pending_orders.group(:part_id)
+                                             .select("part_id, 
+                                                      SUM(
+                                                        CASE 
+                                                          WHEN real_quantity_delivered = 0 THEN quantity
+                                                          ELSE (quantity - real_quantity_delivered)
+                                                        END
+                                                      ) AS remaining_quantity")
+                                             .index_by(&:part_id)
+                                             .transform_values { |record| record.remaining_quantity.to_i }
       else
-        query.sum("quantity - COALESCE(partial_quantity_delivered, 0) - COALESCE(real_quantity_delivered, 0)")
+        remaining_quantities = pending_orders.sum(
+          "CASE 
+            WHEN real_quantity_delivered = 0 THEN quantity
+            ELSE (quantity - COALESCE(real_quantity_delivered, 0))
+          END"
+        )
       end
+    
+      remaining_quantities
     end
   
     def calculate_in_transit_expeditions(part_ids, group: false)
